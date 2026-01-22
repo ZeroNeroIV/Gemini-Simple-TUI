@@ -1,0 +1,31 @@
+{
+  "name": "jimmy-tui",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "",
+  "bin": {
+    "jimmy": "./dist/app.js"
+  },
+  "scripts": {
+    "build": "tsup --onSuccess \"chmod +x dist/app.js\"",
+    "dev": "tsup --watch --onSuccess \"node --env-file=.env dist/app.js\""
+  },
+  "author": "ZeroNeroIV",
+  "license": "MIT",
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "dotenv": "^17.2.3",
+    "ink": "^6.6.0",
+    "ink-text-input": "^6.0.0",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.10",
+    "@types/react": "^19.2.9",
+    "ts-node": "^10.9.2",
+    "tsup": "^8.5.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}
