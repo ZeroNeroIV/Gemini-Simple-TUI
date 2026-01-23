@@ -6,4 +6,5 @@ export default defineConfig({
   clean: true,
   // Bundle ALL the UI libraries to remove internal 'require' conflicts
   external: ['react-devtools-core'],
+  bundle: true,
 });
