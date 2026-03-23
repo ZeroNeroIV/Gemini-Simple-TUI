@@ -71,12 +71,12 @@ function renderInline(text: string): React.ReactNode[] {
 // ─── Block markdown renderer ─────────────────────────────────────────
 // Parses markdown text into blocks and renders each as Ink components.
 // Handles: tables, code blocks, headers, lists, blockquotes, horizontal rules, paragraphs.
-function renderMd(source: string): React.ReactNode {
+function renderMd(source: string, maxWidth?: number): React.ReactNode {
 	const lines = source.split('\n');
 	const blocks: React.ReactNode[] = [];
 	let i = 0;
 	let key = 0;
-	const COLS = (process.stdout.columns || 80) - 4; // padding/margin buffer
+	const COLS = maxWidth ?? Math.min((process.stdout.columns || 80) - 4, 60);
 
 	while (i < lines.length) {
 		const line = lines[i];
@@ -321,6 +321,9 @@ const App = () => {
 	const [displayHistory, setDisplayHistory] = useState<Message[]>([]);
 	const [clearKey, setClearKey] = useState(0);
 
+	// Message box is width="75%" with padding={1} on the outer box
+	const msgWidth = Math.floor((process.stdout.columns || 80) * 0.75) - 2;
+
 	useEffect(() => {
 		const initChat = model.startChat({
 			history: [{
@@ -436,7 +439,7 @@ const App = () => {
 								{msg.role === 'user' ? config.username : config.aiNickname}:
 							</Text>
 							{msg.role === 'model' ? (
-								renderMd(msg.text)
+								renderMd(msg.text, msgWidth)
 							) : (
 								<Text>{msg.text}</Text>
 							)}
@@ -453,7 +456,7 @@ const App = () => {
 				>
 					<Box flexDirection="column" width="75%">
 						<Text color="green" bold>{config.aiNickname}:</Text>
-						{renderMd(currentResponse)}
+						{renderMd(currentResponse, msgWidth)}
 					</Box>
 				</Box>
 			)}

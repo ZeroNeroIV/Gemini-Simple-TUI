@@ -102,12 +102,12 @@ function renderInline(text) {
   }
   return parts;
 }
-function renderMd(source) {
+function renderMd(source, maxWidth) {
   const lines = source.split("\n");
   const blocks = [];
   let i = 0;
   let key = 0;
-  const COLS = (process.stdout.columns || 80) - 4;
+  const COLS = maxWidth ?? Math.min((process.stdout.columns || 80) - 4, 60);
   while (i < lines.length) {
     const line = lines[i];
     const codeStart = line.match(/^```\s*(.*)?$/);
@@ -306,6 +306,7 @@ var App = () => {
   const [historyIndex, setHistoryIndex] = useState(0);
   const [displayHistory, setDisplayHistory] = useState([]);
   const [clearKey, setClearKey] = useState(0);
+  const msgWidth = Math.floor((process.stdout.columns || 80) * 0.75) - 2;
   useEffect(() => {
     const initChat = model.startChat({
       history: [{
@@ -409,7 +410,7 @@ var App = () => {
               ]
             }
           ),
-          msg.role === "model" ? renderMd(msg.text) : /* @__PURE__ */ jsx(Text, { children: msg.text })
+          msg.role === "model" ? renderMd(msg.text, msgWidth) : /* @__PURE__ */ jsx(Text, { children: msg.text })
         ] })
       },
       msg.id
@@ -425,7 +426,7 @@ var App = () => {
             config.aiNickname,
             ":"
           ] }),
-          renderMd(currentResponse)
+          renderMd(currentResponse, msgWidth)
         ] })
       }
     ),
