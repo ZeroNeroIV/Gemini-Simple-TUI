@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // app.tsx
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { render, Box, Text, Static, useInput, useApp } from "ink";
 import TextInput from "ink-text-input";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -71,33 +71,45 @@ if (config.apiKey === "YOUR_GEMINI_API_KEY_HERE") {
 console.log(`Jimmy | model=${config.model} user=${config.username} ai=${config.aiNickname}`);
 var genAI = new GoogleGenerativeAI(config.apiKey);
 var model = genAI.getGenerativeModel({ model: config.model });
-function cleanMd(md2) {
-  return md2.replace(/\n[ \t]+/g, "\n").replace(/[ \t]+\n/g, "\n").trim();
+function wrapText(children) {
+  return React.Children.map(children, (child) => {
+    if (typeof child === "string" || typeof child === "number") {
+      const s = String(child);
+      if (!s.trim()) return null;
+      return /* @__PURE__ */ jsx(Text, { children: s });
+    }
+    if (React.isValidElement(child) && child.props?.children) {
+      return React.cloneElement(child, {
+        children: wrapText(child.props.children)
+      });
+    }
+    return child;
+  });
 }
 var md = {
-  p: ({ children }) => /* @__PURE__ */ jsx(Text, { children }),
-  h1: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children }),
-  h2: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children }),
-  h3: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children }),
-  h4: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children }),
-  h5: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children }),
-  h6: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children }),
-  li: ({ children }) => /* @__PURE__ */ jsx(Text, { children }),
-  span: ({ children }) => /* @__PURE__ */ jsx(Text, { children }),
-  strong: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children }),
-  em: ({ children }) => /* @__PURE__ */ jsx(Text, { italic: true, children }),
-  code: ({ children }) => /* @__PURE__ */ jsx(Text, { color: "cyan", children }),
-  pre: ({ children }) => /* @__PURE__ */ jsx(Box, { flexDirection: "column", children }),
-  blockquote: ({ children }) => /* @__PURE__ */ jsx(Text, { color: "gray", children }),
-  a: ({ children }) => /* @__PURE__ */ jsx(Text, { color: "blue", underline: true, children }),
-  ul: ({ children }) => /* @__PURE__ */ jsx(Box, { flexDirection: "column", children }),
-  ol: ({ children }) => /* @__PURE__ */ jsx(Box, { flexDirection: "column", children }),
-  table: ({ children }) => /* @__PURE__ */ jsx(Box, { flexDirection: "column", children }),
-  thead: ({ children }) => /* @__PURE__ */ jsx(Box, { flexDirection: "column", children }),
-  tbody: ({ children }) => /* @__PURE__ */ jsx(Box, { flexDirection: "column", children }),
-  tr: ({ children }) => /* @__PURE__ */ jsx(Text, { children }),
-  th: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children }),
-  td: ({ children }) => /* @__PURE__ */ jsx(Text, { children }),
+  p: ({ children }) => /* @__PURE__ */ jsx(Text, { children: wrapText(children) }),
+  h1: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children: wrapText(children) }),
+  h2: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children: wrapText(children) }),
+  h3: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children: wrapText(children) }),
+  h4: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children: wrapText(children) }),
+  h5: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children: wrapText(children) }),
+  h6: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children: wrapText(children) }),
+  li: ({ children }) => /* @__PURE__ */ jsx(Text, { children: wrapText(children) }),
+  span: ({ children }) => /* @__PURE__ */ jsx(Text, { children: wrapText(children) }),
+  strong: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children: wrapText(children) }),
+  em: ({ children }) => /* @__PURE__ */ jsx(Text, { italic: true, children: wrapText(children) }),
+  code: ({ children }) => /* @__PURE__ */ jsx(Text, { color: "cyan", children: wrapText(children) }),
+  pre: ({ children }) => /* @__PURE__ */ jsx(Box, { flexDirection: "column", children: wrapText(children) }),
+  blockquote: ({ children }) => /* @__PURE__ */ jsx(Text, { color: "gray", children: wrapText(children) }),
+  a: ({ children }) => /* @__PURE__ */ jsx(Text, { color: "blue", underline: true, children: wrapText(children) }),
+  ul: ({ children }) => /* @__PURE__ */ jsx(Box, { flexDirection: "column", children: wrapText(children) }),
+  ol: ({ children }) => /* @__PURE__ */ jsx(Box, { flexDirection: "column", children: wrapText(children) }),
+  table: ({ children }) => /* @__PURE__ */ jsx(Box, { flexDirection: "column", children: wrapText(children) }),
+  thead: ({ children }) => /* @__PURE__ */ jsx(Box, { flexDirection: "column", children: wrapText(children) }),
+  tbody: ({ children }) => /* @__PURE__ */ jsx(Box, { flexDirection: "column", children: wrapText(children) }),
+  tr: ({ children }) => /* @__PURE__ */ jsx(Text, { children: wrapText(children) }),
+  th: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children: wrapText(children) }),
+  td: ({ children }) => /* @__PURE__ */ jsx(Text, { children: wrapText(children) }),
   img: ({ alt }) => /* @__PURE__ */ jsxs(Text, { color: "gray", children: [
     "[Image: ",
     alt || "no alt",
@@ -222,7 +234,7 @@ var App = () => {
               ]
             }
           ),
-          msg.role === "model" ? /* @__PURE__ */ jsx(ReactMarkdown, { components: md, remarkPlugins: [remarkGfm], rehypePlugins: [rehypeHighlight], children: cleanMd(msg.text) }) : /* @__PURE__ */ jsx(Text, { children: msg.text })
+          msg.role === "model" ? /* @__PURE__ */ jsx(ReactMarkdown, { components: md, remarkPlugins: [remarkGfm], rehypePlugins: [rehypeHighlight], children: msg.text }) : /* @__PURE__ */ jsx(Text, { children: msg.text })
         ] })
       },
       msg.id
@@ -238,7 +250,7 @@ var App = () => {
             config.aiNickname,
             ":"
           ] }),
-          /* @__PURE__ */ jsx(ReactMarkdown, { components: md, remarkPlugins: [remarkGfm], rehypePlugins: [rehypeHighlight], children: cleanMd(currentResponse) })
+          /* @__PURE__ */ jsx(ReactMarkdown, { components: md, remarkPlugins: [remarkGfm], rehypePlugins: [rehypeHighlight], children: currentResponse })
         ] })
       }
     ),

@@ -19,39 +19,51 @@ console.log(`Jimmy | model=${config.model} user=${config.username} ai=${config.a
 const genAI = new GoogleGenerativeAI(config.apiKey);
 const model = genAI.getGenerativeModel({ model: config.model });
 
-// Strip whitespace-only text nodes from markdown that would crash Ink.
-// ReactMarkdown can produce bare "\n  " text nodes between block elements.
-function cleanMd(md: string): string {
-	return md.replace(/\n[ \t]+/g, '\n').replace(/[ \t]+\n/g, '\n').trim();
+// Recursively walk React children and wrap any bare strings in <Text>.
+// ReactMarkdown produces raw string nodes that crash Ink's reconciler.
+function wrapText(children: React.ReactNode): React.ReactNode {
+	return React.Children.map(children, (child) => {
+		if (typeof child === 'string' || typeof child === 'number') {
+			const s = String(child);
+			// Drop whitespace-only nodes (newlines + indentation between blocks)
+			if (!s.trim()) return null;
+			return <Text>{s}</Text>;
+		}
+		if (React.isValidElement(child) && (child.props as any)?.children) {
+			return React.cloneElement(child as React.ReactElement<any>, {
+				children: wrapText((child.props as any).children),
+			});
+		}
+		return child;
+	});
 }
 
-// Map markdown elements to Ink components — ReactMarkdown renders HTML tags
-// but Ink only understands <Text> and <Box>. Without this, raw text nodes
-// crash with "Text string must be rendered inside <Text> component".
+// Component wrappers for ReactMarkdown — each wraps its children through
+// wrapText so that every bare string ends up inside an Ink <Text>.
 const md = {
-	p: ({ children }: any) => <Text>{children}</Text>,
-	h1: ({ children }: any) => <Text bold>{children}</Text>,
-	h2: ({ children }: any) => <Text bold>{children}</Text>,
-	h3: ({ children }: any) => <Text bold>{children}</Text>,
-	h4: ({ children }: any) => <Text bold>{children}</Text>,
-	h5: ({ children }: any) => <Text bold>{children}</Text>,
-	h6: ({ children }: any) => <Text bold>{children}</Text>,
-	li: ({ children }: any) => <Text>{children}</Text>,
-	span: ({ children }: any) => <Text>{children}</Text>,
-	strong: ({ children }: any) => <Text bold>{children}</Text>,
-	em: ({ children }: any) => <Text italic>{children}</Text>,
-	code: ({ children }: any) => <Text color="cyan">{children}</Text>,
-	pre: ({ children }: any) => <Box flexDirection="column">{children}</Box>,
-	blockquote: ({ children }: any) => <Text color="gray">{children}</Text>,
-	a: ({ children }: any) => <Text color="blue" underline>{children}</Text>,
-	ul: ({ children }: any) => <Box flexDirection="column">{children}</Box>,
-	ol: ({ children }: any) => <Box flexDirection="column">{children}</Box>,
-	table: ({ children }: any) => <Box flexDirection="column">{children}</Box>,
-	thead: ({ children }: any) => <Box flexDirection="column">{children}</Box>,
-	tbody: ({ children }: any) => <Box flexDirection="column">{children}</Box>,
-	tr: ({ children }: any) => <Text>{children}</Text>,
-	th: ({ children }: any) => <Text bold>{children}</Text>,
-	td: ({ children }: any) => <Text>{children}</Text>,
+	p: ({ children }: any) => <Text>{wrapText(children)}</Text>,
+	h1: ({ children }: any) => <Text bold>{wrapText(children)}</Text>,
+	h2: ({ children }: any) => <Text bold>{wrapText(children)}</Text>,
+	h3: ({ children }: any) => <Text bold>{wrapText(children)}</Text>,
+	h4: ({ children }: any) => <Text bold>{wrapText(children)}</Text>,
+	h5: ({ children }: any) => <Text bold>{wrapText(children)}</Text>,
+	h6: ({ children }: any) => <Text bold>{wrapText(children)}</Text>,
+	li: ({ children }: any) => <Text>{wrapText(children)}</Text>,
+	span: ({ children }: any) => <Text>{wrapText(children)}</Text>,
+	strong: ({ children }: any) => <Text bold>{wrapText(children)}</Text>,
+	em: ({ children }: any) => <Text italic>{wrapText(children)}</Text>,
+	code: ({ children }: any) => <Text color="cyan">{wrapText(children)}</Text>,
+	pre: ({ children }: any) => <Box flexDirection="column">{wrapText(children)}</Box>,
+	blockquote: ({ children }: any) => <Text color="gray">{wrapText(children)}</Text>,
+	a: ({ children }: any) => <Text color="blue" underline>{wrapText(children)}</Text>,
+	ul: ({ children }: any) => <Box flexDirection="column">{wrapText(children)}</Box>,
+	ol: ({ children }: any) => <Box flexDirection="column">{wrapText(children)}</Box>,
+	table: ({ children }: any) => <Box flexDirection="column">{wrapText(children)}</Box>,
+	thead: ({ children }: any) => <Box flexDirection="column">{wrapText(children)}</Box>,
+	tbody: ({ children }: any) => <Box flexDirection="column">{wrapText(children)}</Box>,
+	tr: ({ children }: any) => <Text>{wrapText(children)}</Text>,
+	th: ({ children }: any) => <Text bold>{wrapText(children)}</Text>,
+	td: ({ children }: any) => <Text>{wrapText(children)}</Text>,
 	img: ({ alt }: any) => <Text color="gray">[Image: {alt || 'no alt'}]</Text>,
 	hr: () => <Text color="gray">{'─'.repeat(40)}</Text>,
 };
@@ -197,7 +209,7 @@ const App = () => {
 							</Text>
 							{msg.role === 'model' ? (
 								<ReactMarkdown components={md} remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-									{cleanMd(msg.text)}
+									{msg.text}
 								</ReactMarkdown>
 							) : (
 								<Text>{msg.text}</Text>
@@ -216,7 +228,7 @@ const App = () => {
 					<Box flexDirection="column" width="75%">
 						<Text color="green" bold>{config.aiNickname}:</Text>
 						<ReactMarkdown components={md} remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-							{cleanMd(currentResponse)}
+							{currentResponse}
 						</ReactMarkdown>
 					</Box>
 				</Box>
