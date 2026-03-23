@@ -170,20 +170,46 @@ var App = () => {
     setIsLoading(false);
   };
   return /* @__PURE__ */ jsxs(Box, { flexDirection: "column", padding: 1, children: [
-    /* @__PURE__ */ jsx(Static, { items: displayHistory, children: (msg, index) => /* @__PURE__ */ jsxs(Box, { flexDirection: "column", marginBottom: 1, children: [
-      /* @__PURE__ */ jsxs(Text, { color: msg.role === "user" ? "magenta" : "green", bold: true, children: [
-        msg.role === "user" ? config.username : config.aiNickname,
-        ":"
-      ] }),
-      msg.role === "model" ? /* @__PURE__ */ jsx(ReactMarkdown, { remarkPlugins: [remarkGfm], rehypePlugins: [rehypeHighlight], children: msg.text }) : /* @__PURE__ */ jsx(Text, { children: msg.text })
-    ] }, msg.id) }, clearKey),
-    isLoading && /* @__PURE__ */ jsxs(Box, { flexDirection: "column", marginBottom: 1, children: [
-      /* @__PURE__ */ jsxs(Text, { color: "green", bold: true, children: [
-        config.aiNickname,
-        ":"
-      ] }),
-      /* @__PURE__ */ jsx(ReactMarkdown, { remarkPlugins: [remarkGfm], rehypePlugins: [rehypeHighlight], children: currentResponse })
-    ] }),
+    /* @__PURE__ */ jsx(Static, { items: displayHistory, children: (msg, index) => /* @__PURE__ */ jsxs(
+      Box,
+      {
+        flexDirection: "column",
+        marginBottom: 1,
+        alignSelf: msg.role === "user" ? "flex-end" : "flex-start",
+        width: "75%",
+        children: [
+          /* @__PURE__ */ jsxs(
+            Text,
+            {
+              color: msg.role === "user" ? "magenta" : "green",
+              bold: true,
+              children: [
+                msg.role === "user" ? config.username : config.aiNickname,
+                ":"
+              ]
+            }
+          ),
+          msg.role === "model" ? /* @__PURE__ */ jsx(ReactMarkdown, { remarkPlugins: [remarkGfm], rehypePlugins: [rehypeHighlight], children: msg.text }) : /* @__PURE__ */ jsx(Text, { children: msg.text })
+        ]
+      },
+      msg.id
+    ) }, clearKey),
+    isLoading && /* @__PURE__ */ jsxs(
+      Box,
+      {
+        flexDirection: "column",
+        marginBottom: 1,
+        alignSelf: "flex-start",
+        width: "75%",
+        children: [
+          /* @__PURE__ */ jsxs(Text, { color: "green", bold: true, children: [
+            config.aiNickname,
+            ":"
+          ] }),
+          /* @__PURE__ */ jsx(ReactMarkdown, { remarkPlugins: [remarkGfm], rehypePlugins: [rehypeHighlight], children: currentResponse })
+        ]
+      }
+    ),
     /* @__PURE__ */ jsxs(Box, { borderStyle: "round", borderColor: isLoading ? "yellow" : "gray", children: [
       /* @__PURE__ */ jsx(Box, { marginRight: 1, children: /* @__PURE__ */ jsx(Text, { color: "blue", children: ">" }) }),
       /* @__PURE__ */ jsx(

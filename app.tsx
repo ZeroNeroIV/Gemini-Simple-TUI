@@ -145,8 +145,17 @@ const App = () => {
 		<Box flexDirection="column" padding={1}>
 			<Static key={clearKey} items={displayHistory}>
 				{(msg, index) => (
-					<Box key={msg.id} flexDirection="column" marginBottom={1}>
-						<Text color={msg.role === 'user' ? 'magenta' : 'green'} bold>
+					<Box
+						key={msg.id}
+						flexDirection="column"
+						marginBottom={1}
+						alignSelf={msg.role === 'user' ? 'flex-end' : 'flex-start'}
+						width="75%"
+					>
+						<Text
+							color={msg.role === 'user' ? 'magenta' : 'green'}
+							bold
+						>
 							{msg.role === 'user' ? config.username : config.aiNickname}:
 						</Text>
 						{msg.role === 'model' ? (
@@ -161,7 +170,12 @@ const App = () => {
 			</Static>
 
 			{isLoading && (
-				<Box flexDirection="column" marginBottom={1}>
+				<Box
+					flexDirection="column"
+					marginBottom={1}
+					alignSelf="flex-start"
+					width="75%"
+				>
 					<Text color="green" bold>{config.aiNickname}:</Text>
 					<ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
 						{currentResponse}
