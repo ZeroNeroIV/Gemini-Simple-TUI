@@ -70,12 +70,13 @@ function renderInline(text: string): React.ReactNode[] {
 
 // ─── Block markdown renderer ─────────────────────────────────────────
 // Parses markdown text into blocks and renders each as Ink components.
-// Handles: code blocks, headers, lists, blockquotes, horizontal rules, paragraphs.
+// Handles: tables, code blocks, headers, lists, blockquotes, horizontal rules, paragraphs.
 function renderMd(source: string): React.ReactNode {
 	const lines = source.split('\n');
 	const blocks: React.ReactNode[] = [];
 	let i = 0;
 	let key = 0;
+	const COLS = (process.stdout.columns || 80) - 4; // padding/margin buffer
 
 	while (i < lines.length) {
 		const line = lines[i];
@@ -91,12 +92,27 @@ function renderMd(source: string): React.ReactNode {
 				i++;
 			}
 			i++; // skip closing ```
+			const maxCodeLen = Math.max(lang.length, ...codeLines.map(l => l.length));
+			const codeWidth = Math.min(maxCodeLen + 2, COLS);
+			const border = '─'.repeat(codeWidth);
 			blocks.push(
-				<Box key={key++} flexDirection="column" marginY={1} borderStyle="single" borderColor="gray" paddingLeft={1} paddingRight={1}>
-					{lang && <Text color="gray" dimColor>{lang}</Text>}
+				<Box key={key++} flexDirection="column" marginY={1}>
+					<Text color="gray">┌{border}┐</Text>
+					{lang && (
+						<Box flexDirection="row">
+							<Text color="gray">│</Text>
+							<Text color="gray" dimColor> {lang}{' '.repeat(Math.max(0, codeWidth - lang.length - 1))}</Text>
+							<Text color="gray">│</Text>
+						</Box>
+					)}
 					{codeLines.map((cl, ci) => (
-						<Text key={ci} color="cyan">{cl}</Text>
+						<Box key={ci} flexDirection="row">
+							<Text color="gray">│</Text>
+							<Text color="cyan"> {cl}{' '.repeat(Math.max(0, codeWidth - cl.length - 1))}</Text>
+							<Text color="gray">│</Text>
+						</Box>
 					))}
+					<Text color="gray">└{border}┘</Text>
 				</Box>
 			);
 			continue;
@@ -109,7 +125,7 @@ function renderMd(source: string): React.ReactNode {
 			const color = level === 1 ? 'yellow' : level === 2 ? 'green' : undefined;
 			blocks.push(
 				<Text key={key++} bold color={color}>
-					{headerMatch[2]}
+					{renderInline(headerMatch[2])}
 				</Text>
 			);
 			i++;
@@ -118,7 +134,7 @@ function renderMd(source: string): React.ReactNode {
 
 		// Horizontal rule: --- or *** or ___
 		if (line.match(/^(-{3,}|\*{3,}|_{3,})$/)) {
-			blocks.push(<Text key={key++} color="gray">{'─'.repeat(40)}</Text>);
+			blocks.push(<Text key={key++} color="gray">{'─'.repeat(Math.min(40, COLS))}</Text>);
 			i++;
 			continue;
 		}
@@ -169,9 +185,12 @@ function renderMd(source: string): React.ReactNode {
 			}
 			blocks.push(
 				<Box key={key++} flexDirection="column">
-					{items.map((item, li) => (
-						<Text key={li}>  {nums[li]}. {renderInline(item)}</Text>
-					))}
+					{items.map((item, li) => {
+						const prefix = `${nums[li]}. `;
+						return (
+							<Text key={li}>  {prefix}{renderInline(item)}</Text>
+						);
+					})}
 				</Box>
 			);
 			continue;
@@ -198,17 +217,30 @@ function renderMd(source: string): React.ReactNode {
 				.map(parseRow);
 
 			const numCols = headerRow.length;
-			const colWidths = headerRow.map(h => h.length);
+
+			// Calculate ideal column widths from content
+			const idealWidths = headerRow.map(h => h.length);
 			for (const row of dataRows) {
 				for (let c = 0; c < numCols; c++) {
-					colWidths[c] = Math.max(colWidths[c], (row[c] || '').length);
+					idealWidths[c] = Math.max(idealWidths[c], (row[c] || '').length);
 				}
 			}
 
-			const pad = (s: string, w: number) => s + ' '.repeat(Math.max(0, w - s.length));
-			const padR = (s: string, w: number) => ' '.repeat(Math.max(0, w - s.length)) + s;
-			const totalInner = colWidths.reduce((a, b) => a + b, 0) + (numCols - 1) * 3 + 4;
-			const border = '─'.repeat(totalInner);
+			// Cap to fit terminal width: borders + separators + padding
+			const overhead = (numCols - 1) * 3 + 4; // " │ " between cols + "│ " start + " │" end
+			let totalWidth = idealWidths.reduce((a, b) => a + b, 0) + overhead;
+			const colWidths = [...idealWidths];
+			if (totalWidth > COLS) {
+				const available = COLS - overhead;
+				const totalIdeal = idealWidths.reduce((a, b) => a + b, 0);
+				for (let c = 0; c < numCols; c++) {
+					colWidths[c] = Math.max(6, Math.floor(idealWidths[c] * available / totalIdeal));
+				}
+				totalWidth = colWidths.reduce((a, b) => a + b, 0) + overhead;
+			}
+
+			const pad = (s: string, w: number) => s.length > w ? s.slice(0, w - 1) + '…' : s + ' '.repeat(w - s.length);
+			const border = '─'.repeat(totalWidth);
 
 			const renderRow = (cells: string[], isHeader: boolean) => (
 				<Box key={key++} flexDirection="row">
@@ -217,8 +249,8 @@ function renderMd(source: string): React.ReactNode {
 						<React.Fragment key={ci}>
 							{ci > 0 && <Text color="gray"> │ </Text>}
 							{isHeader
-								? <Text bold>{pad(cell, colWidths[ci])}</Text>
-								: <Text>{pad(cell, colWidths[ci])}</Text>
+								? <Text bold>{renderInline(pad(cell, colWidths[ci]))}</Text>
+								: <Text>{renderInline(pad(cell, colWidths[ci]))}</Text>
 							}
 						</React.Fragment>
 					))}

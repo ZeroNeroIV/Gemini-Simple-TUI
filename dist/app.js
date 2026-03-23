@@ -107,6 +107,7 @@ function renderMd(source) {
   const blocks = [];
   let i = 0;
   let key = 0;
+  const COLS = (process.stdout.columns || 80) - 4;
   while (i < lines.length) {
     const line = lines[i];
     const codeStart = line.match(/^```\s*(.*)?$/);
@@ -119,10 +120,39 @@ function renderMd(source) {
         i++;
       }
       i++;
+      const maxCodeLen = Math.max(lang.length, ...codeLines.map((l) => l.length));
+      const codeWidth = Math.min(maxCodeLen + 2, COLS);
+      const border = "\u2500".repeat(codeWidth);
       blocks.push(
-        /* @__PURE__ */ jsxs(Box, { flexDirection: "column", marginY: 1, borderStyle: "single", borderColor: "gray", paddingLeft: 1, paddingRight: 1, children: [
-          lang && /* @__PURE__ */ jsx(Text, { color: "gray", dimColor: true, children: lang }),
-          codeLines.map((cl, ci) => /* @__PURE__ */ jsx(Text, { color: "cyan", children: cl }, ci))
+        /* @__PURE__ */ jsxs(Box, { flexDirection: "column", marginY: 1, children: [
+          /* @__PURE__ */ jsxs(Text, { color: "gray", children: [
+            "\u250C",
+            border,
+            "\u2510"
+          ] }),
+          lang && /* @__PURE__ */ jsxs(Box, { flexDirection: "row", children: [
+            /* @__PURE__ */ jsx(Text, { color: "gray", children: "\u2502" }),
+            /* @__PURE__ */ jsxs(Text, { color: "gray", dimColor: true, children: [
+              " ",
+              lang,
+              " ".repeat(Math.max(0, codeWidth - lang.length - 1))
+            ] }),
+            /* @__PURE__ */ jsx(Text, { color: "gray", children: "\u2502" })
+          ] }),
+          codeLines.map((cl, ci) => /* @__PURE__ */ jsxs(Box, { flexDirection: "row", children: [
+            /* @__PURE__ */ jsx(Text, { color: "gray", children: "\u2502" }),
+            /* @__PURE__ */ jsxs(Text, { color: "cyan", children: [
+              " ",
+              cl,
+              " ".repeat(Math.max(0, codeWidth - cl.length - 1))
+            ] }),
+            /* @__PURE__ */ jsx(Text, { color: "gray", children: "\u2502" })
+          ] }, ci)),
+          /* @__PURE__ */ jsxs(Text, { color: "gray", children: [
+            "\u2514",
+            border,
+            "\u2518"
+          ] })
         ] }, key++)
       );
       continue;
@@ -132,13 +162,13 @@ function renderMd(source) {
       const level = headerMatch[1].length;
       const color = level === 1 ? "yellow" : level === 2 ? "green" : void 0;
       blocks.push(
-        /* @__PURE__ */ jsx(Text, { bold: true, color, children: headerMatch[2] }, key++)
+        /* @__PURE__ */ jsx(Text, { bold: true, color, children: renderInline(headerMatch[2]) }, key++)
       );
       i++;
       continue;
     }
     if (line.match(/^(-{3,}|\*{3,}|_{3,})$/)) {
-      blocks.push(/* @__PURE__ */ jsx(Text, { color: "gray", children: "\u2500".repeat(40) }, key++));
+      blocks.push(/* @__PURE__ */ jsx(Text, { color: "gray", children: "\u2500".repeat(Math.min(40, COLS)) }, key++));
       i++;
       continue;
     }
@@ -177,12 +207,14 @@ function renderMd(source) {
         i++;
       }
       blocks.push(
-        /* @__PURE__ */ jsx(Box, { flexDirection: "column", children: items.map((item, li) => /* @__PURE__ */ jsxs(Text, { children: [
-          "  ",
-          nums[li],
-          ". ",
-          renderInline(item)
-        ] }, li)) }, key++)
+        /* @__PURE__ */ jsx(Box, { flexDirection: "column", children: items.map((item, li) => {
+          const prefix = `${nums[li]}. `;
+          return /* @__PURE__ */ jsxs(Text, { children: [
+            "  ",
+            prefix,
+            renderInline(item)
+          ] }, li);
+        }) }, key++)
       );
       continue;
     }
@@ -197,21 +229,30 @@ function renderMd(source) {
       const headerRow = parseRow(tableLines[0]);
       const dataRows = tableLines.slice(1).filter((r) => !isSep(r)).map(parseRow);
       const numCols = headerRow.length;
-      const colWidths = headerRow.map((h) => h.length);
+      const idealWidths = headerRow.map((h) => h.length);
       for (const row of dataRows) {
         for (let c = 0; c < numCols; c++) {
-          colWidths[c] = Math.max(colWidths[c], (row[c] || "").length);
+          idealWidths[c] = Math.max(idealWidths[c], (row[c] || "").length);
         }
       }
-      const pad = (s, w) => s + " ".repeat(Math.max(0, w - s.length));
-      const padR = (s, w) => " ".repeat(Math.max(0, w - s.length)) + s;
-      const totalInner = colWidths.reduce((a, b) => a + b, 0) + (numCols - 1) * 3 + 4;
-      const border = "\u2500".repeat(totalInner);
+      const overhead = (numCols - 1) * 3 + 4;
+      let totalWidth = idealWidths.reduce((a, b) => a + b, 0) + overhead;
+      const colWidths = [...idealWidths];
+      if (totalWidth > COLS) {
+        const available = COLS - overhead;
+        const totalIdeal = idealWidths.reduce((a, b) => a + b, 0);
+        for (let c = 0; c < numCols; c++) {
+          colWidths[c] = Math.max(6, Math.floor(idealWidths[c] * available / totalIdeal));
+        }
+        totalWidth = colWidths.reduce((a, b) => a + b, 0) + overhead;
+      }
+      const pad = (s, w) => s.length > w ? s.slice(0, w - 1) + "\u2026" : s + " ".repeat(w - s.length);
+      const border = "\u2500".repeat(totalWidth);
       const renderRow = (cells, isHeader) => /* @__PURE__ */ jsxs(Box, { flexDirection: "row", children: [
         /* @__PURE__ */ jsx(Text, { color: "gray", children: "\u2502 " }),
         cells.map((cell, ci) => /* @__PURE__ */ jsxs(React.Fragment, { children: [
           ci > 0 && /* @__PURE__ */ jsx(Text, { color: "gray", children: " \u2502 " }),
-          isHeader ? /* @__PURE__ */ jsx(Text, { bold: true, children: pad(cell, colWidths[ci]) }) : /* @__PURE__ */ jsx(Text, { children: pad(cell, colWidths[ci]) })
+          isHeader ? /* @__PURE__ */ jsx(Text, { bold: true, children: renderInline(pad(cell, colWidths[ci])) }) : /* @__PURE__ */ jsx(Text, { children: renderInline(pad(cell, colWidths[ci])) })
         ] }, ci)),
         /* @__PURE__ */ jsx(Text, { color: "gray", children: " \u2502" })
       ] }, key++);
