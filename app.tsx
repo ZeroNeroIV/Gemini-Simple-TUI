@@ -15,13 +15,15 @@ import React, { useState, useEffect } from 'react';
 import { render, Box, Text, Static, useInput, useApp } from 'ink';
 import TextInput from 'ink-text-input';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
+import { loadConfig } from './config.js';
 
-
+const config = loadConfig();
+console.log('Config:', `model=${config.model}`, `user=${config.username}`, `ai=${config.aiNickname}`);
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_KEY || '');
-const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
-
-const USERNAME = 'ZeroNeroIV';
-const AI_NICKNAME = 'Jimmy';
+const model = genAI.getGenerativeModel({ model: config.model });
 
 type Message = {
 	id: string;
@@ -43,13 +45,12 @@ const App = () => {
 
 
 	useEffect(() => {
-		const systemPrompt = "You are a helpful AI assistant. Always provide short, concise, and accurate answers. Be direct and to the point. Avoid unnecessary elaboration unless specifically asked for more detail.";
-		const initChat = model.startChat({ 
+		const initChat = model.startChat({
 			history: [{
 				role: 'user',
-				parts: [{ text: systemPrompt }]
+				parts: [{ text: config.systemPrompt }]
 			}, {
-				role: 'model', 
+				role: 'model',
 				parts: [{ text: 'Understood. I will provide short, concise, and accurate answers.' }]
 			}]
 		});
@@ -152,17 +153,25 @@ const App = () => {
 				{(msg, index) => (
 					<Box key={msg.id} flexDirection="column" marginBottom={1}>
 						<Text color={msg.role === 'user' ? 'magenta' : 'green'} bold>
-							{msg.role === 'user' ? USERNAME : AI_NICKNAME}:
+							{msg.role === 'user' ? config.username : config.aiNickname}:
 						</Text>
-						<Text>{msg.text}</Text>
+						{msg.role === 'model' ? (
+							<ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+								{msg.text}
+							</ReactMarkdown>
+						) : (
+							<Text>{msg.text}</Text>
+						)}
 					</Box>
 				)}
 			</Static>
 
 			{isLoading && (
 				<Box flexDirection="column" marginBottom={1}>
-					<Text color="green" bold>{AI_NICKNAME}:</Text>
-					<Text>{currentResponse}</Text>
+					<Text color="green" bold>{config.aiNickname}:</Text>
+					<ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+						{currentResponse}
+					</ReactMarkdown>
 				</Box>
 			)}
 

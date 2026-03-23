@@ -17,6 +17,7 @@
     "dotenv": "^17.2.3",
     "ink": "^6.6.0",
     "ink-text-input": "^6.0.0",
+    "js-yaml": "^4.1.1",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-markdown": "^10.1.0",
@@ -24,6 +25,7 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^25.0.10",
     "@types/react": "^19.2.9",
     "ts-node": "^10.9.2",
