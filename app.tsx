@@ -3,9 +3,6 @@ import React, { useState, useEffect } from 'react';
 import { render, Box, Text, Static, useInput, useApp } from 'ink';
 import TextInput from 'ink-text-input';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeHighlight from 'rehype-highlight';
 import { loadConfig } from './config.js';
 
 const config = loadConfig();
@@ -19,61 +16,206 @@ console.log(`Jimmy | model=${config.model} user=${config.username} ai=${config.a
 const genAI = new GoogleGenerativeAI(config.apiKey);
 const model = genAI.getGenerativeModel({ model: config.model });
 
-// Recursively walk React children and wrap any bare strings in <Text>.
-// ReactMarkdown produces raw string nodes that crash Ink's reconciler.
-function wrapText(children: React.ReactNode): React.ReactNode {
-	return React.Children.map(children, (child) => {
-		if (typeof child === 'string' || typeof child === 'number') {
-			const s = String(child);
-			// Drop whitespace-only nodes (newlines + indentation between blocks)
-			if (!s.trim()) return null;
-			return <Text>{s}</Text>;
+// ─── Inline markdown parser ──────────────────────────────────────────
+// Handles: **bold**, *italic*, `code`
+// Returns an array of React <Text> elements (no bare strings).
+function renderInline(text: string): React.ReactNode[] {
+	const parts: React.ReactNode[] = [];
+	let remaining = text;
+	let key = 0;
+
+	while (remaining.length > 0) {
+		// Bold: **text**
+		const boldMatch = remaining.match(/\*\*(.+?)\*\*/);
+		// Italic: *text*
+		const italicMatch = remaining.match(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/);
+		// Inline code: `text`
+		const codeMatch = remaining.match(/`([^`]+)`/);
+
+		// Find the earliest match
+		const matches = [
+			boldMatch && { type: 'bold' as const, match: boldMatch, index: boldMatch.index! },
+			italicMatch && { type: 'italic' as const, match: italicMatch, index: italicMatch.index! },
+			codeMatch && { type: 'code' as const, match: codeMatch, index: codeMatch.index! },
+		].filter(Boolean) as { type: string; match: RegExpMatchArray; index: number }[];
+
+		if (matches.length === 0) {
+			parts.push(<Text key={key++}>{remaining}</Text>);
+			break;
 		}
-		if (React.isValidElement(child) && (child.props as any)?.children) {
-			return React.cloneElement(child as React.ReactElement<any>, {
-				children: wrapText((child.props as any).children),
-			});
+
+		matches.sort((a, b) => a.index - b.index);
+		const first = matches[0];
+
+		// Text before the match
+		if (first.index > 0) {
+			parts.push(<Text key={key++}>{remaining.slice(0, first.index)}</Text>);
 		}
-		return child;
-	});
+
+		// The matched inline element
+		const inner = first.match[1];
+		if (first.type === 'bold') {
+			parts.push(<Text key={key++} bold>{inner}</Text>);
+		} else if (first.type === 'italic') {
+			parts.push(<Text key={key++} italic>{inner}</Text>);
+		} else {
+			parts.push(<Text key={key++} color="cyan">{inner}</Text>);
+		}
+
+		remaining = remaining.slice(first.index + first.match[0].length);
+	}
+
+	return parts;
 }
 
-// Component wrappers for ReactMarkdown — each wraps its children through
-// wrapText so that every bare string ends up inside an Ink <Text>.
-const md = {
-	p: ({ children }: any) => <Text>{wrapText(children)}</Text>,
-	h1: ({ children }: any) => <Text bold>{wrapText(children)}</Text>,
-	h2: ({ children }: any) => <Text bold>{wrapText(children)}</Text>,
-	h3: ({ children }: any) => <Text bold>{wrapText(children)}</Text>,
-	h4: ({ children }: any) => <Text bold>{wrapText(children)}</Text>,
-	h5: ({ children }: any) => <Text bold>{wrapText(children)}</Text>,
-	h6: ({ children }: any) => <Text bold>{wrapText(children)}</Text>,
-	li: ({ children }: any) => <Text>{wrapText(children)}</Text>,
-	span: ({ children }: any) => <Text>{wrapText(children)}</Text>,
-	strong: ({ children }: any) => <Text bold>{wrapText(children)}</Text>,
-	em: ({ children }: any) => <Text italic>{wrapText(children)}</Text>,
-	code: ({ children }: any) => <Text color="cyan">{wrapText(children)}</Text>,
-	pre: ({ children }: any) => <Box flexDirection="column">{wrapText(children)}</Box>,
-	blockquote: ({ children }: any) => <Text color="gray">{wrapText(children)}</Text>,
-	a: ({ children }: any) => <Text color="blue" underline>{wrapText(children)}</Text>,
-	ul: ({ children }: any) => <Box flexDirection="column">{wrapText(children)}</Box>,
-	ol: ({ children }: any) => <Box flexDirection="column">{wrapText(children)}</Box>,
-	table: ({ children }: any) => <Box flexDirection="column">{wrapText(children)}</Box>,
-	thead: ({ children }: any) => <Box flexDirection="column">{wrapText(children)}</Box>,
-	tbody: ({ children }: any) => <Box flexDirection="column">{wrapText(children)}</Box>,
-	tr: ({ children }: any) => <Text>{wrapText(children)}</Text>,
-	th: ({ children }: any) => <Text bold>{wrapText(children)}</Text>,
-	td: ({ children }: any) => <Text>{wrapText(children)}</Text>,
-	img: ({ alt }: any) => <Text color="gray">[Image: {alt || 'no alt'}]</Text>,
-	hr: () => <Text color="gray">{'─'.repeat(40)}</Text>,
-};
+// ─── Block markdown renderer ─────────────────────────────────────────
+// Parses markdown text into blocks and renders each as Ink components.
+// Handles: code blocks, headers, lists, blockquotes, horizontal rules, paragraphs.
+function renderMd(source: string): React.ReactNode {
+	const lines = source.split('\n');
+	const blocks: React.ReactNode[] = [];
+	let i = 0;
+	let key = 0;
 
+	while (i < lines.length) {
+		const line = lines[i];
+
+		// Code block: ``` or ```lang
+		const codeStart = line.match(/^```\s*(.*)?$/);
+		if (codeStart) {
+			const lang = codeStart[1]?.trim() || '';
+			const codeLines: string[] = [];
+			i++;
+			while (i < lines.length && !lines[i].match(/^```\s*$/)) {
+				codeLines.push(lines[i]);
+				i++;
+			}
+			i++; // skip closing ```
+			blocks.push(
+				<Box key={key++} flexDirection="column" marginY={1} borderStyle="single" borderColor="gray" paddingLeft={1} paddingRight={1}>
+					{lang && <Text color="gray" dimColor>{lang}</Text>}
+					{codeLines.map((cl, ci) => (
+						<Text key={ci} color="cyan">{cl}</Text>
+					))}
+				</Box>
+			);
+			continue;
+		}
+
+		// Header: # ... ######
+		const headerMatch = line.match(/^(#{1,6})\s+(.+)$/);
+		if (headerMatch) {
+			const level = headerMatch[1].length;
+			const color = level === 1 ? 'yellow' : level === 2 ? 'green' : undefined;
+			blocks.push(
+				<Text key={key++} bold color={color}>
+					{headerMatch[2]}
+				</Text>
+			);
+			i++;
+			continue;
+		}
+
+		// Horizontal rule: --- or *** or ___
+		if (line.match(/^(-{3,}|\*{3,}|_{3,})$/)) {
+			blocks.push(<Text key={key++} color="gray">{'─'.repeat(40)}</Text>);
+			i++;
+			continue;
+		}
+
+		// Blockquote: > text
+		if (line.startsWith('> ')) {
+			const quoteLines: string[] = [];
+			while (i < lines.length && lines[i].startsWith('> ')) {
+				quoteLines.push(lines[i].slice(2));
+				i++;
+			}
+			blocks.push(
+				<Box key={key++} flexDirection="column" borderStyle="round" borderColor="gray" paddingLeft={1}>
+					{quoteLines.map((ql, qi) => (
+						<Text key={qi} color="gray" italic>{renderInline(ql)}</Text>
+					))}
+				</Box>
+			);
+			continue;
+		}
+
+		// Unordered list: - item or * item
+		if (line.match(/^[-*]\s+/)) {
+			const items: string[] = [];
+			while (i < lines.length && lines[i].match(/^[-*]\s+/)) {
+				items.push(lines[i].replace(/^[-*]\s+/, ''));
+				i++;
+			}
+			blocks.push(
+				<Box key={key++} flexDirection="column">
+					{items.map((item, li) => (
+						<Text key={li}>  • {renderInline(item)}</Text>
+					))}
+				</Box>
+			);
+			continue;
+		}
+
+		// Ordered list: 1. item
+		if (line.match(/^\d+\.\s+/)) {
+			const items: string[] = [];
+			const nums: number[] = [];
+			while (i < lines.length && lines[i].match(/^\d+\.\s+/)) {
+				const numMatch = lines[i].match(/^(\d+)\.\s+/);
+				nums.push(parseInt(numMatch![1]));
+				items.push(lines[i].replace(/^\d+\.\s+/, ''));
+				i++;
+			}
+			blocks.push(
+				<Box key={key++} flexDirection="column">
+					{items.map((item, li) => (
+						<Text key={li}>  {nums[li]}. {renderInline(item)}</Text>
+					))}
+				</Box>
+			);
+			continue;
+		}
+
+		// Empty line → blank spacer
+		if (line.trim() === '') {
+			i++;
+			continue;
+		}
+
+		// Regular paragraph: collect consecutive non-empty, non-special lines
+		const paraLines: string[] = [];
+		while (
+			i < lines.length &&
+			lines[i].trim() !== '' &&
+			!lines[i].match(/^```/) &&
+			!lines[i].match(/^#{1,6}\s/) &&
+			!lines[i].match(/^(-{3,}|\*{3,}|_{3,})$/) &&
+			!lines[i].startsWith('> ') &&
+			!lines[i].match(/^[-*]\s+/) &&
+			!lines[i].match(/^\d+\.\s+/)
+		) {
+			paraLines.push(lines[i]);
+			i++;
+		}
+		if (paraLines.length > 0) {
+			blocks.push(
+				<Text key={key++}>{renderInline(paraLines.join(' '))}</Text>
+			);
+		}
+	}
+
+	return <Box flexDirection="column">{blocks}</Box>;
+}
+
+// ─── Types ───────────────────────────────────────────────────────────
 type Message = {
 	id: string;
 	role: 'user' | 'model';
 	text: string;
 };
 
+// ─── App ─────────────────────────────────────────────────────────────
 const App = () => {
 	const { exit } = useApp();
 	const [history, setHistory] = useState<Message[]>([]);
@@ -84,8 +226,6 @@ const App = () => {
 	const [historyIndex, setHistoryIndex] = useState(0);
 	const [displayHistory, setDisplayHistory] = useState<Message[]>([]);
 	const [clearKey, setClearKey] = useState(0);
-
-
 
 	useEffect(() => {
 		const initChat = model.startChat({
@@ -121,13 +261,11 @@ const App = () => {
 	});
 
 	const send = async (val: string) => {
-		console.log('send called with:', JSON.stringify(val));
 		if (!val.trim() || isLoading || !chatSession) return;
 
 		// Handle clear commands
 		if (val.trim() === '/clear' || val.trim() === '/clean' || val.trim() === '/cls') {
-			console.log('Clear command detected!');
-			console.clear(); // Clear the terminal
+			console.clear();
 			setDisplayHistory([]);
 			setCurrentResponse('');
 			setInput('');
@@ -137,7 +275,6 @@ const App = () => {
 
 		// Handle exit commands
 		if (val.trim() === '/exit' || val.trim() === '/quit') {
-			console.log('Goodbye!');
 			exit();
 			return;
 		}
@@ -173,20 +310,17 @@ const App = () => {
 			setDisplayHistory(updatedHistory);
 			setCurrentResponse('');
 		} catch (e: any) {
-    			// This will print the full error details to your terminal window where you ran the command
-    			console.error("DEBUG ERROR:", JSON.stringify(e, null, 2));
-
-    			const errorHistory = [
+			const errorHistory = [
 				...history,
-				{ 
-					id: Date.now().toString(), 
-					role: 'model' as const, 
-					text: `Error: ${e.message || 'Unknown error'}` 
+				{
+					id: Date.now().toString(),
+					role: 'model' as const,
+					text: `Error: ${e.message || 'Unknown error'}`
 				}
 			];
 			setHistory(errorHistory);
 			setDisplayHistory(errorHistory);
-                }
+		}
 		setIsLoading(false);
 	};
 
@@ -208,9 +342,7 @@ const App = () => {
 								{msg.role === 'user' ? config.username : config.aiNickname}:
 							</Text>
 							{msg.role === 'model' ? (
-								<ReactMarkdown components={md} remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-									{msg.text}
-								</ReactMarkdown>
+								renderMd(msg.text)
 							) : (
 								<Text>{msg.text}</Text>
 							)}
@@ -227,9 +359,7 @@ const App = () => {
 				>
 					<Box flexDirection="column" width="75%">
 						<Text color="green" bold>{config.aiNickname}:</Text>
-						<ReactMarkdown components={md} remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-							{currentResponse}
-						</ReactMarkdown>
+						{renderMd(currentResponse)}
 					</Box>
 				</Box>
 			)}

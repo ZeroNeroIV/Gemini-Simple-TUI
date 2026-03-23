@@ -1,13 +1,10 @@
 #!/usr/bin/env node
 
 // app.tsx
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { render, Box, Text, Static, useInput, useApp } from "ink";
 import TextInput from "ink-text-input";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import rehypeHighlight from "rehype-highlight";
 
 // config.ts
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
@@ -71,52 +68,141 @@ if (config.apiKey === "YOUR_GEMINI_API_KEY_HERE") {
 console.log(`Jimmy | model=${config.model} user=${config.username} ai=${config.aiNickname}`);
 var genAI = new GoogleGenerativeAI(config.apiKey);
 var model = genAI.getGenerativeModel({ model: config.model });
-function wrapText(children) {
-  return React.Children.map(children, (child) => {
-    if (typeof child === "string" || typeof child === "number") {
-      const s = String(child);
-      if (!s.trim()) return null;
-      return /* @__PURE__ */ jsx(Text, { children: s });
+function renderInline(text) {
+  const parts = [];
+  let remaining = text;
+  let key = 0;
+  while (remaining.length > 0) {
+    const boldMatch = remaining.match(/\*\*(.+?)\*\*/);
+    const italicMatch = remaining.match(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/);
+    const codeMatch = remaining.match(/`([^`]+)`/);
+    const matches = [
+      boldMatch && { type: "bold", match: boldMatch, index: boldMatch.index },
+      italicMatch && { type: "italic", match: italicMatch, index: italicMatch.index },
+      codeMatch && { type: "code", match: codeMatch, index: codeMatch.index }
+    ].filter(Boolean);
+    if (matches.length === 0) {
+      parts.push(/* @__PURE__ */ jsx(Text, { children: remaining }, key++));
+      break;
     }
-    if (React.isValidElement(child) && child.props?.children) {
-      return React.cloneElement(child, {
-        children: wrapText(child.props.children)
-      });
+    matches.sort((a, b) => a.index - b.index);
+    const first = matches[0];
+    if (first.index > 0) {
+      parts.push(/* @__PURE__ */ jsx(Text, { children: remaining.slice(0, first.index) }, key++));
     }
-    return child;
-  });
+    const inner = first.match[1];
+    if (first.type === "bold") {
+      parts.push(/* @__PURE__ */ jsx(Text, { bold: true, children: inner }, key++));
+    } else if (first.type === "italic") {
+      parts.push(/* @__PURE__ */ jsx(Text, { italic: true, children: inner }, key++));
+    } else {
+      parts.push(/* @__PURE__ */ jsx(Text, { color: "cyan", children: inner }, key++));
+    }
+    remaining = remaining.slice(first.index + first.match[0].length);
+  }
+  return parts;
 }
-var md = {
-  p: ({ children }) => /* @__PURE__ */ jsx(Text, { children: wrapText(children) }),
-  h1: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children: wrapText(children) }),
-  h2: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children: wrapText(children) }),
-  h3: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children: wrapText(children) }),
-  h4: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children: wrapText(children) }),
-  h5: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children: wrapText(children) }),
-  h6: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children: wrapText(children) }),
-  li: ({ children }) => /* @__PURE__ */ jsx(Text, { children: wrapText(children) }),
-  span: ({ children }) => /* @__PURE__ */ jsx(Text, { children: wrapText(children) }),
-  strong: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children: wrapText(children) }),
-  em: ({ children }) => /* @__PURE__ */ jsx(Text, { italic: true, children: wrapText(children) }),
-  code: ({ children }) => /* @__PURE__ */ jsx(Text, { color: "cyan", children: wrapText(children) }),
-  pre: ({ children }) => /* @__PURE__ */ jsx(Box, { flexDirection: "column", children: wrapText(children) }),
-  blockquote: ({ children }) => /* @__PURE__ */ jsx(Text, { color: "gray", children: wrapText(children) }),
-  a: ({ children }) => /* @__PURE__ */ jsx(Text, { color: "blue", underline: true, children: wrapText(children) }),
-  ul: ({ children }) => /* @__PURE__ */ jsx(Box, { flexDirection: "column", children: wrapText(children) }),
-  ol: ({ children }) => /* @__PURE__ */ jsx(Box, { flexDirection: "column", children: wrapText(children) }),
-  table: ({ children }) => /* @__PURE__ */ jsx(Box, { flexDirection: "column", children: wrapText(children) }),
-  thead: ({ children }) => /* @__PURE__ */ jsx(Box, { flexDirection: "column", children: wrapText(children) }),
-  tbody: ({ children }) => /* @__PURE__ */ jsx(Box, { flexDirection: "column", children: wrapText(children) }),
-  tr: ({ children }) => /* @__PURE__ */ jsx(Text, { children: wrapText(children) }),
-  th: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children: wrapText(children) }),
-  td: ({ children }) => /* @__PURE__ */ jsx(Text, { children: wrapText(children) }),
-  img: ({ alt }) => /* @__PURE__ */ jsxs(Text, { color: "gray", children: [
-    "[Image: ",
-    alt || "no alt",
-    "]"
-  ] }),
-  hr: () => /* @__PURE__ */ jsx(Text, { color: "gray", children: "\u2500".repeat(40) })
-};
+function renderMd(source) {
+  const lines = source.split("\n");
+  const blocks = [];
+  let i = 0;
+  let key = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    const codeStart = line.match(/^```\s*(.*)?$/);
+    if (codeStart) {
+      const lang = codeStart[1]?.trim() || "";
+      const codeLines = [];
+      i++;
+      while (i < lines.length && !lines[i].match(/^```\s*$/)) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      i++;
+      blocks.push(
+        /* @__PURE__ */ jsxs(Box, { flexDirection: "column", marginY: 1, borderStyle: "single", borderColor: "gray", paddingLeft: 1, paddingRight: 1, children: [
+          lang && /* @__PURE__ */ jsx(Text, { color: "gray", dimColor: true, children: lang }),
+          codeLines.map((cl, ci) => /* @__PURE__ */ jsx(Text, { color: "cyan", children: cl }, ci))
+        ] }, key++)
+      );
+      continue;
+    }
+    const headerMatch = line.match(/^(#{1,6})\s+(.+)$/);
+    if (headerMatch) {
+      const level = headerMatch[1].length;
+      const color = level === 1 ? "yellow" : level === 2 ? "green" : void 0;
+      blocks.push(
+        /* @__PURE__ */ jsx(Text, { bold: true, color, children: headerMatch[2] }, key++)
+      );
+      i++;
+      continue;
+    }
+    if (line.match(/^(-{3,}|\*{3,}|_{3,})$/)) {
+      blocks.push(/* @__PURE__ */ jsx(Text, { color: "gray", children: "\u2500".repeat(40) }, key++));
+      i++;
+      continue;
+    }
+    if (line.startsWith("> ")) {
+      const quoteLines = [];
+      while (i < lines.length && lines[i].startsWith("> ")) {
+        quoteLines.push(lines[i].slice(2));
+        i++;
+      }
+      blocks.push(
+        /* @__PURE__ */ jsx(Box, { flexDirection: "column", borderStyle: "round", borderColor: "gray", paddingLeft: 1, children: quoteLines.map((ql, qi) => /* @__PURE__ */ jsx(Text, { color: "gray", italic: true, children: renderInline(ql) }, qi)) }, key++)
+      );
+      continue;
+    }
+    if (line.match(/^[-*]\s+/)) {
+      const items = [];
+      while (i < lines.length && lines[i].match(/^[-*]\s+/)) {
+        items.push(lines[i].replace(/^[-*]\s+/, ""));
+        i++;
+      }
+      blocks.push(
+        /* @__PURE__ */ jsx(Box, { flexDirection: "column", children: items.map((item, li) => /* @__PURE__ */ jsxs(Text, { children: [
+          "  \u2022 ",
+          renderInline(item)
+        ] }, li)) }, key++)
+      );
+      continue;
+    }
+    if (line.match(/^\d+\.\s+/)) {
+      const items = [];
+      const nums = [];
+      while (i < lines.length && lines[i].match(/^\d+\.\s+/)) {
+        const numMatch = lines[i].match(/^(\d+)\.\s+/);
+        nums.push(parseInt(numMatch[1]));
+        items.push(lines[i].replace(/^\d+\.\s+/, ""));
+        i++;
+      }
+      blocks.push(
+        /* @__PURE__ */ jsx(Box, { flexDirection: "column", children: items.map((item, li) => /* @__PURE__ */ jsxs(Text, { children: [
+          "  ",
+          nums[li],
+          ". ",
+          renderInline(item)
+        ] }, li)) }, key++)
+      );
+      continue;
+    }
+    if (line.trim() === "") {
+      i++;
+      continue;
+    }
+    const paraLines = [];
+    while (i < lines.length && lines[i].trim() !== "" && !lines[i].match(/^```/) && !lines[i].match(/^#{1,6}\s/) && !lines[i].match(/^(-{3,}|\*{3,}|_{3,})$/) && !lines[i].startsWith("> ") && !lines[i].match(/^[-*]\s+/) && !lines[i].match(/^\d+\.\s+/)) {
+      paraLines.push(lines[i]);
+      i++;
+    }
+    if (paraLines.length > 0) {
+      blocks.push(
+        /* @__PURE__ */ jsx(Text, { children: renderInline(paraLines.join(" ")) }, key++)
+      );
+    }
+  }
+  return /* @__PURE__ */ jsx(Box, { flexDirection: "column", children: blocks });
+}
 var App = () => {
   const { exit } = useApp();
   const [history, setHistory] = useState([]);
@@ -157,10 +243,8 @@ var App = () => {
     }
   });
   const send = async (val) => {
-    console.log("send called with:", JSON.stringify(val));
     if (!val.trim() || isLoading || !chatSession) return;
     if (val.trim() === "/clear" || val.trim() === "/clean" || val.trim() === "/cls") {
-      console.log("Clear command detected!");
       console.clear();
       setDisplayHistory([]);
       setCurrentResponse("");
@@ -169,7 +253,6 @@ var App = () => {
       return;
     }
     if (val.trim() === "/exit" || val.trim() === "/quit") {
-      console.log("Goodbye!");
       exit();
       return;
     }
@@ -201,7 +284,6 @@ var App = () => {
       setDisplayHistory(updatedHistory);
       setCurrentResponse("");
     } catch (e) {
-      console.error("DEBUG ERROR:", JSON.stringify(e, null, 2));
       const errorHistory = [
         ...history,
         {
@@ -234,7 +316,7 @@ var App = () => {
               ]
             }
           ),
-          msg.role === "model" ? /* @__PURE__ */ jsx(ReactMarkdown, { components: md, remarkPlugins: [remarkGfm], rehypePlugins: [rehypeHighlight], children: msg.text }) : /* @__PURE__ */ jsx(Text, { children: msg.text })
+          msg.role === "model" ? renderMd(msg.text) : /* @__PURE__ */ jsx(Text, { children: msg.text })
         ] })
       },
       msg.id
@@ -250,7 +332,7 @@ var App = () => {
             config.aiNickname,
             ":"
           ] }),
-          /* @__PURE__ */ jsx(ReactMarkdown, { components: md, remarkPlugins: [remarkGfm], rehypePlugins: [rehypeHighlight], children: currentResponse })
+          renderMd(currentResponse)
         ] })
       }
     ),
