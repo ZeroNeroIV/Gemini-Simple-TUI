@@ -19,6 +19,37 @@ console.log(`Jimmy | model=${config.model} user=${config.username} ai=${config.a
 const genAI = new GoogleGenerativeAI(config.apiKey);
 const model = genAI.getGenerativeModel({ model: config.model });
 
+// Map markdown elements to Ink components — ReactMarkdown renders HTML tags
+// but Ink only understands <Text> and <Box>. Without this, raw text nodes
+// crash with "Text string must be rendered inside <Text> component".
+const md = {
+	p: ({ children }: any) => <Text>{children}</Text>,
+	h1: ({ children }: any) => <Text bold>{children}</Text>,
+	h2: ({ children }: any) => <Text bold>{children}</Text>,
+	h3: ({ children }: any) => <Text bold>{children}</Text>,
+	h4: ({ children }: any) => <Text bold>{children}</Text>,
+	h5: ({ children }: any) => <Text bold>{children}</Text>,
+	h6: ({ children }: any) => <Text bold>{children}</Text>,
+	li: ({ children }: any) => <Text>{children}</Text>,
+	span: ({ children }: any) => <Text>{children}</Text>,
+	strong: ({ children }: any) => <Text bold>{children}</Text>,
+	em: ({ children }: any) => <Text italic>{children}</Text>,
+	code: ({ children }: any) => <Text color="cyan">{children}</Text>,
+	pre: ({ children }: any) => <Box flexDirection="column">{children}</Box>,
+	blockquote: ({ children }: any) => <Text color="gray">{children}</Text>,
+	a: ({ children }: any) => <Text color="blue" underline>{children}</Text>,
+	ul: ({ children }: any) => <Box flexDirection="column">{children}</Box>,
+	ol: ({ children }: any) => <Box flexDirection="column">{children}</Box>,
+	table: ({ children }: any) => <Box flexDirection="column">{children}</Box>,
+	thead: ({ children }: any) => <Box flexDirection="column">{children}</Box>,
+	tbody: ({ children }: any) => <Box flexDirection="column">{children}</Box>,
+	tr: ({ children }: any) => <Text>{children}</Text>,
+	th: ({ children }: any) => <Text bold>{children}</Text>,
+	td: ({ children }: any) => <Text>{children}</Text>,
+	img: ({ alt }: any) => <Text color="gray">[Image: {alt || 'no alt'}]</Text>,
+	hr: () => <Text color="gray">{'─'.repeat(40)}</Text>,
+};
+
 type Message = {
 	id: string;
 	role: 'user' | 'model';
@@ -159,7 +190,7 @@ const App = () => {
 							{msg.role === 'user' ? config.username : config.aiNickname}:
 						</Text>
 						{msg.role === 'model' ? (
-							<ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+							<ReactMarkdown components={md} remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
 								{msg.text}
 							</ReactMarkdown>
 						) : (
@@ -177,7 +208,7 @@ const App = () => {
 					width="75%"
 				>
 					<Text color="green" bold>{config.aiNickname}:</Text>
-					<ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+					<ReactMarkdown components={md} remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
 						{currentResponse}
 					</ReactMarkdown>
 				</Box>

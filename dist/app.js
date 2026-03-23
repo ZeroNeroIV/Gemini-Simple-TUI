@@ -71,6 +71,37 @@ if (config.apiKey === "YOUR_GEMINI_API_KEY_HERE") {
 console.log(`Jimmy | model=${config.model} user=${config.username} ai=${config.aiNickname}`);
 var genAI = new GoogleGenerativeAI(config.apiKey);
 var model = genAI.getGenerativeModel({ model: config.model });
+var md = {
+  p: ({ children }) => /* @__PURE__ */ jsx(Text, { children }),
+  h1: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children }),
+  h2: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children }),
+  h3: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children }),
+  h4: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children }),
+  h5: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children }),
+  h6: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children }),
+  li: ({ children }) => /* @__PURE__ */ jsx(Text, { children }),
+  span: ({ children }) => /* @__PURE__ */ jsx(Text, { children }),
+  strong: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children }),
+  em: ({ children }) => /* @__PURE__ */ jsx(Text, { italic: true, children }),
+  code: ({ children }) => /* @__PURE__ */ jsx(Text, { color: "cyan", children }),
+  pre: ({ children }) => /* @__PURE__ */ jsx(Box, { flexDirection: "column", children }),
+  blockquote: ({ children }) => /* @__PURE__ */ jsx(Text, { color: "gray", children }),
+  a: ({ children }) => /* @__PURE__ */ jsx(Text, { color: "blue", underline: true, children }),
+  ul: ({ children }) => /* @__PURE__ */ jsx(Box, { flexDirection: "column", children }),
+  ol: ({ children }) => /* @__PURE__ */ jsx(Box, { flexDirection: "column", children }),
+  table: ({ children }) => /* @__PURE__ */ jsx(Box, { flexDirection: "column", children }),
+  thead: ({ children }) => /* @__PURE__ */ jsx(Box, { flexDirection: "column", children }),
+  tbody: ({ children }) => /* @__PURE__ */ jsx(Box, { flexDirection: "column", children }),
+  tr: ({ children }) => /* @__PURE__ */ jsx(Text, { children }),
+  th: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children }),
+  td: ({ children }) => /* @__PURE__ */ jsx(Text, { children }),
+  img: ({ alt }) => /* @__PURE__ */ jsxs(Text, { color: "gray", children: [
+    "[Image: ",
+    alt || "no alt",
+    "]"
+  ] }),
+  hr: () => /* @__PURE__ */ jsx(Text, { color: "gray", children: "\u2500".repeat(40) })
+};
 var App = () => {
   const { exit } = useApp();
   const [history, setHistory] = useState([]);
@@ -189,7 +220,7 @@ var App = () => {
               ]
             }
           ),
-          msg.role === "model" ? /* @__PURE__ */ jsx(ReactMarkdown, { remarkPlugins: [remarkGfm], rehypePlugins: [rehypeHighlight], children: msg.text }) : /* @__PURE__ */ jsx(Text, { children: msg.text })
+          msg.role === "model" ? /* @__PURE__ */ jsx(ReactMarkdown, { components: md, remarkPlugins: [remarkGfm], rehypePlugins: [rehypeHighlight], children: msg.text }) : /* @__PURE__ */ jsx(Text, { children: msg.text })
         ]
       },
       msg.id
@@ -206,7 +237,7 @@ var App = () => {
             config.aiNickname,
             ":"
           ] }),
-          /* @__PURE__ */ jsx(ReactMarkdown, { remarkPlugins: [remarkGfm], rehypePlugins: [rehypeHighlight], children: currentResponse })
+          /* @__PURE__ */ jsx(ReactMarkdown, { components: md, remarkPlugins: [remarkGfm], rehypePlugins: [rehypeHighlight], children: currentResponse })
         ]
       }
     ),
