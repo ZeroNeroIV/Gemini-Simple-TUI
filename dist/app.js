@@ -71,6 +71,9 @@ if (config.apiKey === "YOUR_GEMINI_API_KEY_HERE") {
 console.log(`Jimmy | model=${config.model} user=${config.username} ai=${config.aiNickname}`);
 var genAI = new GoogleGenerativeAI(config.apiKey);
 var model = genAI.getGenerativeModel({ model: config.model });
+function cleanMd(md2) {
+  return md2.replace(/\n[ \t]+/g, "\n").replace(/[ \t]+\n/g, "\n").trim();
+}
 var md = {
   p: ({ children }) => /* @__PURE__ */ jsx(Text, { children }),
   h1: ({ children }) => /* @__PURE__ */ jsx(Text, { bold: true, children }),
@@ -201,14 +204,13 @@ var App = () => {
     setIsLoading(false);
   };
   return /* @__PURE__ */ jsxs(Box, { flexDirection: "column", padding: 1, children: [
-    /* @__PURE__ */ jsx(Static, { items: displayHistory, children: (msg, index) => /* @__PURE__ */ jsxs(
+    /* @__PURE__ */ jsx(Static, { items: displayHistory, children: (msg, index) => /* @__PURE__ */ jsx(
       Box,
       {
-        flexDirection: "column",
+        flexDirection: "row",
+        justifyContent: msg.role === "user" ? "flex-end" : "flex-start",
         marginBottom: 1,
-        alignSelf: msg.role === "user" ? "flex-end" : "flex-start",
-        width: "75%",
-        children: [
+        children: /* @__PURE__ */ jsxs(Box, { flexDirection: "column", width: "75%", children: [
           /* @__PURE__ */ jsxs(
             Text,
             {
@@ -220,25 +222,24 @@ var App = () => {
               ]
             }
           ),
-          msg.role === "model" ? /* @__PURE__ */ jsx(ReactMarkdown, { components: md, remarkPlugins: [remarkGfm], rehypePlugins: [rehypeHighlight], children: msg.text }) : /* @__PURE__ */ jsx(Text, { children: msg.text })
-        ]
+          msg.role === "model" ? /* @__PURE__ */ jsx(ReactMarkdown, { components: md, remarkPlugins: [remarkGfm], rehypePlugins: [rehypeHighlight], children: cleanMd(msg.text) }) : /* @__PURE__ */ jsx(Text, { children: msg.text })
+        ] })
       },
       msg.id
     ) }, clearKey),
-    isLoading && /* @__PURE__ */ jsxs(
+    isLoading && /* @__PURE__ */ jsx(
       Box,
       {
-        flexDirection: "column",
+        flexDirection: "row",
+        justifyContent: "flex-start",
         marginBottom: 1,
-        alignSelf: "flex-start",
-        width: "75%",
-        children: [
+        children: /* @__PURE__ */ jsxs(Box, { flexDirection: "column", width: "75%", children: [
           /* @__PURE__ */ jsxs(Text, { color: "green", bold: true, children: [
             config.aiNickname,
             ":"
           ] }),
-          /* @__PURE__ */ jsx(ReactMarkdown, { components: md, remarkPlugins: [remarkGfm], rehypePlugins: [rehypeHighlight], children: currentResponse })
-        ]
+          /* @__PURE__ */ jsx(ReactMarkdown, { components: md, remarkPlugins: [remarkGfm], rehypePlugins: [rehypeHighlight], children: cleanMd(currentResponse) })
+        ] })
       }
     ),
     /* @__PURE__ */ jsxs(Box, { borderStyle: "round", borderColor: isLoading ? "yellow" : "gray", children: [

@@ -19,6 +19,12 @@ console.log(`Jimmy | model=${config.model} user=${config.username} ai=${config.a
 const genAI = new GoogleGenerativeAI(config.apiKey);
 const model = genAI.getGenerativeModel({ model: config.model });
 
+// Strip whitespace-only text nodes from markdown that would crash Ink.
+// ReactMarkdown can produce bare "\n  " text nodes between block elements.
+function cleanMd(md: string): string {
+	return md.replace(/\n[ \t]+/g, '\n').replace(/[ \t]+\n/g, '\n').trim();
+}
+
 // Map markdown elements to Ink components — ReactMarkdown renders HTML tags
 // but Ink only understands <Text> and <Box>. Without this, raw text nodes
 // crash with "Text string must be rendered inside <Text> component".
@@ -178,39 +184,41 @@ const App = () => {
 				{(msg, index) => (
 					<Box
 						key={msg.id}
-						flexDirection="column"
+						flexDirection="row"
+						justifyContent={msg.role === 'user' ? 'flex-end' : 'flex-start'}
 						marginBottom={1}
-						alignSelf={msg.role === 'user' ? 'flex-end' : 'flex-start'}
-						width="75%"
 					>
-						<Text
-							color={msg.role === 'user' ? 'magenta' : 'green'}
-							bold
-						>
-							{msg.role === 'user' ? config.username : config.aiNickname}:
-						</Text>
-						{msg.role === 'model' ? (
-							<ReactMarkdown components={md} remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-								{msg.text}
-							</ReactMarkdown>
-						) : (
-							<Text>{msg.text}</Text>
-						)}
+						<Box flexDirection="column" width="75%">
+							<Text
+								color={msg.role === 'user' ? 'magenta' : 'green'}
+								bold
+							>
+								{msg.role === 'user' ? config.username : config.aiNickname}:
+							</Text>
+							{msg.role === 'model' ? (
+								<ReactMarkdown components={md} remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+									{cleanMd(msg.text)}
+								</ReactMarkdown>
+							) : (
+								<Text>{msg.text}</Text>
+							)}
+						</Box>
 					</Box>
 				)}
 			</Static>
 
 			{isLoading && (
 				<Box
-					flexDirection="column"
+					flexDirection="row"
+					justifyContent="flex-start"
 					marginBottom={1}
-					alignSelf="flex-start"
-					width="75%"
 				>
-					<Text color="green" bold>{config.aiNickname}:</Text>
-					<ReactMarkdown components={md} remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
-						{currentResponse}
-					</ReactMarkdown>
+					<Box flexDirection="column" width="75%">
+						<Text color="green" bold>{config.aiNickname}:</Text>
+						<ReactMarkdown components={md} remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+							{cleanMd(currentResponse)}
+						</ReactMarkdown>
+					</Box>
 				</Box>
 			)}
 
