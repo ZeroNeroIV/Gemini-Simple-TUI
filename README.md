@@ -5,26 +5,44 @@ A terminal-based chat interface with Google's Gemini AI, built with React and In
 ## Features
 
 - Chat with Gemini AI directly in your terminal
-- Streaming responses for real-time interaction
+- Streaming responses with markdown rendering (GFM + syntax highlighting)
 - Command history with arrow key navigation
+- YAML config file at `~/.config/jimmy.config.yml`
 - Simple commands: `/clear`, `/exit`
 
 ## Installation
 
 1. Clone the repository
 2. Install dependencies:
+
    ```bash
+   # with npm
    npm install
+
+   # or with bun
+   bun install
    ```
 
-3. Create a `.env` file with your Gemini API key:
-   ```
-   GEMINI_KEY=your_api_key_here
-   ```
+3. Build:
 
-4. Build the project:
    ```bash
+   # with npm
    npm run build
+
+   # or with bun
+   bun run build
+   ```
+
+4. On first run, Jimmy auto-creates a config file at `~/.config/jimmy.config.yml`. Edit it to add your Gemini API key:
+
+   ```yaml
+   apiKey: your_gemini_api_key_here
+   username: You
+   aiNickname: Jimmy
+   model: gemini-2.5-flash
+   systemPrompt: >-
+     You are a direct, no-nonsense assistant. Answer immediately.
+     No preamble, no filler. Just give the answer.
    ```
 
 ## Usage
@@ -41,16 +59,30 @@ jimmy
 ### Development mode
 
 ```bash
+# with npm
 npm run dev
+
+# or with bun
+bun run dev
+```
+
+### Direct run
+
+```bash
+# with node
+node dist/app.js
+
+# or with bun
+bun dist/app.js
 ```
 
 ## Commands
 
-- `/clear` - Clear the conversation history
-- `/exit` - Exit the application
+- `/clear` (or `/clean`, `/cls`) - Clear the conversation history
+- `/exit` (or `/quit`) - Exit the application
 - Use arrow keys to navigate command history
 
 ## Requirements
 
-- Node.js
+- Node.js **or** Bun
 - Google Gemini API key
