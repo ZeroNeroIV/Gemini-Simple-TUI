@@ -8,13 +8,12 @@
   },
   "scripts": {
     "build": "tsup --onSuccess \"chmod +x dist/app.js\"",
-    "dev": "tsup --watch --onSuccess \"node --env-file=.env dist/app.js\""
+    "dev": "tsup --watch --onSuccess \"node dist/app.js\""
   },
   "author": "ZeroNeroIV",
   "license": "MIT",
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
-    "dotenv": "^17.2.3",
     "ink": "^6.6.0",
     "ink-text-input": "^6.0.0",
     "js-yaml": "^4.1.1",

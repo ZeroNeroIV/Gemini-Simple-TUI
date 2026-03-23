@@ -1,16 +1,4 @@
 #!/usr/bin/env node
-import { fileURLToPath } from 'url';
-import { dirname, resolve } from 'path';
-import dotenv from 'dotenv';
-
-// Get the directory of the current file (dist/)
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// Tell dotenv to look one folder up (in the root)
-dotenv.config({ path: resolve(__dirname, './.env') });
-console.log('Current Dir:', process.cwd());
-console.log('Key Status:', process.env.GEMINI_KEY ? 'Loaded ✅' : 'Missing ❌');
 import React, { useState, useEffect } from 'react';
 import { render, Box, Text, Static, useInput, useApp } from 'ink';
 import TextInput from 'ink-text-input';
@@ -21,8 +9,14 @@ import rehypeHighlight from 'rehype-highlight';
 import { loadConfig } from './config.js';
 
 const config = loadConfig();
-console.log('Config:', `model=${config.model}`, `user=${config.username}`, `ai=${config.aiNickname}`);
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_KEY || '');
+
+if (config.apiKey === 'YOUR_GEMINI_API_KEY_HERE') {
+	console.error('Error: No API key set. Edit ~/.config/jimmy.config.yml and add your Gemini API key.');
+	process.exit(1);
+}
+
+console.log(`Jimmy | model=${config.model} user=${config.username} ai=${config.aiNickname}`);
+const genAI = new GoogleGenerativeAI(config.apiKey);
 const model = genAI.getGenerativeModel({ model: config.model });
 
 type Message = {
@@ -51,7 +45,7 @@ const App = () => {
 				parts: [{ text: config.systemPrompt }]
 			}, {
 				role: 'model',
-				parts: [{ text: 'Understood. I will provide short, concise, and accurate answers.' }]
+				parts: [{ text: 'Got it. Direct answers only.' }]
 			}]
 		});
 		setChatSession(initChat);

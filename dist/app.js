@@ -1,9 +1,6 @@
 #!/usr/bin/env node
 
 // app.tsx
-import { fileURLToPath } from "url";
-import { dirname, resolve as resolve2 } from "path";
-import dotenv from "dotenv";
 import { useState, useEffect } from "react";
 import { render, Box, Text, Static, useInput, useApp } from "ink";
 import TextInput from "ink-text-input";
@@ -13,19 +10,35 @@ import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 
 // config.ts
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { resolve } from "path";
 import { homedir } from "os";
 import yaml from "js-yaml";
 var DEFAULT_CONFIG = {
+  apiKey: "YOUR_GEMINI_API_KEY_HERE",
   username: "You",
   aiNickname: "Jimmy",
-  model: "gemini-2.5-flash-lite",
-  systemPrompt: "You are a helpful AI assistant. Always provide short, concise, and accurate answers. Be direct and to the point. Avoid unnecessary elaboration unless specifically asked for more detail."
+  model: "gemini-2.5-flash",
+  systemPrompt: 'You are a direct, no-nonsense assistant. Answer immediately \u2014 no preamble, no filler, no "Sure! Let me help with that." Just give the answer. Be concise. Use code blocks when relevant. Skip the pleasantries.'
 };
-var CONFIG_PATH = resolve(homedir(), ".config", "jimmy.config.yml");
+var CONFIG_DIR = resolve(homedir(), ".config");
+var CONFIG_PATH = resolve(CONFIG_DIR, "jimmy.config.yml");
+function writeDefaultConfig() {
+  if (!existsSync(CONFIG_DIR)) {
+    mkdirSync(CONFIG_DIR, { recursive: true });
+  }
+  const yamlStr = yaml.dump(DEFAULT_CONFIG, {
+    lineWidth: -1,
+    noRefs: true,
+    sortKeys: false
+  });
+  writeFileSync(CONFIG_PATH, yamlStr, "utf-8");
+}
 function loadConfig() {
   if (!existsSync(CONFIG_PATH)) {
+    writeDefaultConfig();
+    console.log(`Config created at: ${CONFIG_PATH}`);
+    console.log("Edit it to add your Gemini API key before first use.\n");
     return DEFAULT_CONFIG;
   }
   try {
@@ -36,6 +49,7 @@ function loadConfig() {
       return DEFAULT_CONFIG;
     }
     return {
+      apiKey: parsed.apiKey ?? DEFAULT_CONFIG.apiKey,
       username: parsed.username ?? DEFAULT_CONFIG.username,
       aiNickname: parsed.aiNickname ?? DEFAULT_CONFIG.aiNickname,
       model: parsed.model ?? DEFAULT_CONFIG.model,
@@ -49,14 +63,13 @@ function loadConfig() {
 
 // app.tsx
 import { jsx, jsxs } from "react/jsx-runtime";
-var __filename = fileURLToPath(import.meta.url);
-var __dirname = dirname(__filename);
-dotenv.config({ path: resolve2(__dirname, "./.env") });
-console.log("Current Dir:", process.cwd());
-console.log("Key Status:", process.env.GEMINI_KEY ? "Loaded \u2705" : "Missing \u274C");
 var config = loadConfig();
-console.log("Config:", `model=${config.model}`, `user=${config.username}`, `ai=${config.aiNickname}`);
-var genAI = new GoogleGenerativeAI(process.env.GEMINI_KEY || "");
+if (config.apiKey === "YOUR_GEMINI_API_KEY_HERE") {
+  console.error("Error: No API key set. Edit ~/.config/jimmy.config.yml and add your Gemini API key.");
+  process.exit(1);
+}
+console.log(`Jimmy | model=${config.model} user=${config.username} ai=${config.aiNickname}`);
+var genAI = new GoogleGenerativeAI(config.apiKey);
 var model = genAI.getGenerativeModel({ model: config.model });
 var App = () => {
   const { exit } = useApp();
@@ -75,7 +88,7 @@ var App = () => {
         parts: [{ text: config.systemPrompt }]
       }, {
         role: "model",
-        parts: [{ text: "Understood. I will provide short, concise, and accurate answers." }]
+        parts: [{ text: "Got it. Direct answers only." }]
       }]
     });
     setChatSession(initChat);
