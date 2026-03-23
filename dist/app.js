@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // app.tsx
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { render, Box, Text, Static, useInput, useApp } from "ink";
 import TextInput from "ink-text-input";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -186,12 +186,64 @@ function renderMd(source) {
       );
       continue;
     }
+    if (line.match(/^\|/)) {
+      const tableLines = [];
+      while (i < lines.length && lines[i].match(/^\|/)) {
+        tableLines.push(lines[i]);
+        i++;
+      }
+      const parseRow = (row) => row.split("|").slice(1, -1).map((cell) => cell.trim());
+      const isSep = (row) => row.replace(/[|\-:\s]/g, "") === "";
+      const headerRow = parseRow(tableLines[0]);
+      const dataRows = tableLines.slice(1).filter((r) => !isSep(r)).map(parseRow);
+      const numCols = headerRow.length;
+      const colWidths = headerRow.map((h) => h.length);
+      for (const row of dataRows) {
+        for (let c = 0; c < numCols; c++) {
+          colWidths[c] = Math.max(colWidths[c], (row[c] || "").length);
+        }
+      }
+      const pad = (s, w) => s + " ".repeat(Math.max(0, w - s.length));
+      const padR = (s, w) => " ".repeat(Math.max(0, w - s.length)) + s;
+      const totalInner = colWidths.reduce((a, b) => a + b, 0) + (numCols - 1) * 3 + 4;
+      const border = "\u2500".repeat(totalInner);
+      const renderRow = (cells, isHeader) => /* @__PURE__ */ jsxs(Box, { flexDirection: "row", children: [
+        /* @__PURE__ */ jsx(Text, { color: "gray", children: "\u2502 " }),
+        cells.map((cell, ci) => /* @__PURE__ */ jsxs(React.Fragment, { children: [
+          ci > 0 && /* @__PURE__ */ jsx(Text, { color: "gray", children: " \u2502 " }),
+          isHeader ? /* @__PURE__ */ jsx(Text, { bold: true, children: pad(cell, colWidths[ci]) }) : /* @__PURE__ */ jsx(Text, { children: pad(cell, colWidths[ci]) })
+        ] }, ci)),
+        /* @__PURE__ */ jsx(Text, { color: "gray", children: " \u2502" })
+      ] }, key++);
+      blocks.push(
+        /* @__PURE__ */ jsxs(Box, { flexDirection: "column", marginY: 1, children: [
+          /* @__PURE__ */ jsxs(Text, { color: "gray", children: [
+            "\u250C",
+            border,
+            "\u2510"
+          ] }),
+          renderRow(headerRow, true),
+          /* @__PURE__ */ jsxs(Text, { color: "gray", children: [
+            "\u251C",
+            border,
+            "\u2524"
+          ] }),
+          dataRows.map((row, ri) => renderRow(row, false)),
+          /* @__PURE__ */ jsxs(Text, { color: "gray", children: [
+            "\u2514",
+            border,
+            "\u2518"
+          ] })
+        ] }, key++)
+      );
+      continue;
+    }
     if (line.trim() === "") {
       i++;
       continue;
     }
     const paraLines = [];
-    while (i < lines.length && lines[i].trim() !== "" && !lines[i].match(/^```/) && !lines[i].match(/^#{1,6}\s/) && !lines[i].match(/^(-{3,}|\*{3,}|_{3,})$/) && !lines[i].startsWith("> ") && !lines[i].match(/^[-*]\s+/) && !lines[i].match(/^\d+\.\s+/)) {
+    while (i < lines.length && lines[i].trim() !== "" && !lines[i].match(/^```/) && !lines[i].match(/^#{1,6}\s/) && !lines[i].match(/^(-{3,}|\*{3,}|_{3,})$/) && !lines[i].startsWith("> ") && !lines[i].match(/^[-*]\s+/) && !lines[i].match(/^\d+\.\s+/) && !lines[i].match(/^\|/)) {
       paraLines.push(lines[i]);
       i++;
     }

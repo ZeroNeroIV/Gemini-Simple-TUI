@@ -177,6 +177,67 @@ function renderMd(source: string): React.ReactNode {
 			continue;
 		}
 
+		// Table: | col1 | col2 |
+		if (line.match(/^\|/)) {
+			const tableLines: string[] = [];
+			while (i < lines.length && lines[i].match(/^\|/)) {
+				tableLines.push(lines[i]);
+				i++;
+			}
+
+			const parseRow = (row: string) =>
+				row.split('|').slice(1, -1).map(cell => cell.trim());
+
+			const isSep = (row: string) =>
+				row.replace(/[|\-:\s]/g, '') === '';
+
+			const headerRow = parseRow(tableLines[0]);
+			const dataRows = tableLines
+				.slice(1)
+				.filter(r => !isSep(r))
+				.map(parseRow);
+
+			const numCols = headerRow.length;
+			const colWidths = headerRow.map(h => h.length);
+			for (const row of dataRows) {
+				for (let c = 0; c < numCols; c++) {
+					colWidths[c] = Math.max(colWidths[c], (row[c] || '').length);
+				}
+			}
+
+			const pad = (s: string, w: number) => s + ' '.repeat(Math.max(0, w - s.length));
+			const padR = (s: string, w: number) => ' '.repeat(Math.max(0, w - s.length)) + s;
+			const totalInner = colWidths.reduce((a, b) => a + b, 0) + (numCols - 1) * 3 + 4;
+			const border = '─'.repeat(totalInner);
+
+			const renderRow = (cells: string[], isHeader: boolean) => (
+				<Box key={key++} flexDirection="row">
+					<Text color="gray">│ </Text>
+					{cells.map((cell, ci) => (
+						<React.Fragment key={ci}>
+							{ci > 0 && <Text color="gray"> │ </Text>}
+							{isHeader
+								? <Text bold>{pad(cell, colWidths[ci])}</Text>
+								: <Text>{pad(cell, colWidths[ci])}</Text>
+							}
+						</React.Fragment>
+					))}
+					<Text color="gray"> │</Text>
+				</Box>
+			);
+
+			blocks.push(
+				<Box key={key++} flexDirection="column" marginY={1}>
+					<Text color="gray">┌{border}┐</Text>
+					{renderRow(headerRow, true)}
+					<Text color="gray">├{border}┤</Text>
+					{dataRows.map((row, ri) => renderRow(row, false))}
+					<Text color="gray">└{border}┘</Text>
+				</Box>
+			);
+			continue;
+		}
+
 		// Empty line → blank spacer
 		if (line.trim() === '') {
 			i++;
@@ -193,7 +254,8 @@ function renderMd(source: string): React.ReactNode {
 			!lines[i].match(/^(-{3,}|\*{3,}|_{3,})$/) &&
 			!lines[i].startsWith('> ') &&
 			!lines[i].match(/^[-*]\s+/) &&
-			!lines[i].match(/^\d+\.\s+/)
+			!lines[i].match(/^\d+\.\s+/) &&
+			!lines[i].match(/^\|/)
 		) {
 			paraLines.push(lines[i]);
 			i++;
