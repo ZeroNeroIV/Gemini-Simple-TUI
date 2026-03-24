@@ -2,8 +2,7 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [master]
 
 permissions:
   contents: write
@@ -15,21 +14,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           registry-url: https://registry.npmjs.org
 
-      - name: Check version matches tag
+      - name: Configure git
         run: |
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
-          PKG_VERSION=$(node -p "require('./package.json').version")
-          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
-            echo "ERROR: Tag version ($TAG_VERSION) != package.json version ($PKG_VERSION)"
-            exit 1
-          fi
-          echo "Version $PKG_VERSION matches tag"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump patch version
+        run: npm version patch --no-git-tag-version
+
+      - name: Get new version
+        id: version
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Commit and tag
+        run: |
+          git add package.json
+          git commit -m "Release v${{ steps.version.outputs.version }}"
+          git tag "v${{ steps.version.outputs.version }}"
+          git push origin master --tags
 
       - name: Install dependencies
         run: npm ci
@@ -43,15 +53,11 @@ jobs:
           head -1 dist/app.js | grep -q '#!/usr/bin/env node'
           echo "Build verified: dist/app.js exists with correct shebang"
 
-      - name: Dry-run npm publish
-        run: npm publish --dry-run
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: ${{ github.ref_name }}
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
           generate_release_notes: true
           files: |
             dist/app.js
