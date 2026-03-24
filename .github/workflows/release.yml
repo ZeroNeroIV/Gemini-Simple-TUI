@@ -39,7 +39,7 @@ jobs:
           git add package.json
           git commit -m "Release v${{ steps.version.outputs.version }}"
           git tag "v${{ steps.version.outputs.version }}"
-          git push origin master --tags
+          git push upstream master --tags
 
       - name: Install dependencies
         run: npm ci
