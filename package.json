@@ -4,7 +4,7 @@
   "type": "module",
   "description": "Terminal chat interface for Google's Gemini AI with streaming responses and markdown rendering",
   "bin": {
-    "jimmy": "./dist/app.js"
+    "jimmy": "dist/app.js"
   },
   "files": [
     "dist",
@@ -12,7 +12,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "tsup --onSuccess \"chmod +x dist/app.js\"",
+    "build": "rm -rf dist && tsup --onSuccess \"chmod +x dist/app.js\"",
     "dev": "tsup --watch --onSuccess \"node dist/app.js\""
   },
   "repository": {
