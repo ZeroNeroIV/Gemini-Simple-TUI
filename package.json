@@ -2,16 +2,41 @@
   "name": "jimmy-tui",
   "version": "1.0.0",
   "type": "module",
-  "description": "",
+  "description": "Terminal chat interface for Google's Gemini AI with streaming responses and markdown rendering",
   "bin": {
     "jimmy": "./dist/app.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsup --onSuccess \"chmod +x dist/app.js\"",
     "dev": "tsup --watch --onSuccess \"node dist/app.js\""
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ZeroNeroIV/Gemini-Simple-TUI.git"
+  },
+  "keywords": [
+    "gemini",
+    "ai",
+    "chat",
+    "tui",
+    "terminal",
+    "cli",
+    "google",
+    "llm",
+    "ink",
+    "react"
+  ],
   "author": "ZeroNeroIV",
   "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/ZeroNeroIV/Gemini-Simple-TUI/issues"
+  },
+  "homepage": "https://github.com/ZeroNeroIV/Gemini-Simple-TUI#readme",
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "ink": "^6.6.0",
