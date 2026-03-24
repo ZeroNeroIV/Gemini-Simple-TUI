@@ -9,6 +9,7 @@ export interface JimmyConfig {
 	aiNickname: string;
 	model: string;
 	systemPrompt: string;
+	debugLogs: boolean;
 }
 
 const DEFAULT_CONFIG: JimmyConfig = {
@@ -18,6 +19,7 @@ const DEFAULT_CONFIG: JimmyConfig = {
 	model: 'gemini-2.5-flash',
 	systemPrompt:
 		'You are a direct, no-nonsense assistant. Answer immediately — no preamble, no filler, no "Sure! Let me help with that." Just give the answer. Be concise. Use code blocks when relevant. Skip the pleasantries.',
+	debugLogs: false,
 };
 
 const CONFIG_DIR = resolve(homedir(), '.config');
@@ -59,6 +61,7 @@ export function loadConfig(): JimmyConfig {
 			aiNickname: parsed.aiNickname ?? DEFAULT_CONFIG.aiNickname,
 			model: parsed.model ?? DEFAULT_CONFIG.model,
 			systemPrompt: parsed.systemPrompt ?? DEFAULT_CONFIG.systemPrompt,
+			debugLogs: parsed.debugLogs ?? DEFAULT_CONFIG.debugLogs,
 		};
 	} catch (err: any) {
 		console.warn(`Warning: failed to parse config file: ${err.message}. Using defaults.`);

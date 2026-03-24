@@ -6,12 +6,20 @@ import { loadConfig } from './config.js';
 
 const config = loadConfig();
 
+const debugLog = (...args: unknown[]) => {
+	if (config.debugLogs) {
+		console.log(...args);
+	}
+};
+
 if (config.apiKey === 'YOUR_GEMINI_API_KEY_HERE') {
 	console.error('Error: No API key set. Edit ~/.config/jimmy.config.yml and add your Gemini API key.');
 	process.exit(1);
 }
 
-console.log(`Jimmy | model=${config.model} user=${config.username} ai=${config.aiNickname}`);
+if (config.debugLogs) {
+	console.log(`Jimmy | model=${config.model} user=${config.username} ai=${config.aiNickname}`);
+}
 const genAI = new GoogleGenerativeAI(config.apiKey);
 const model = genAI.getGenerativeModel({ model: config.model });
 
@@ -745,25 +753,25 @@ const App = () => {
 		setHistoryIndex(newHistory.filter(h => h.role === 'user').length);
 
 		try {
-			console.log('[DEBUG] Sending message...');
+			debugLog('[DEBUG] Sending message...');
 			const timeout = new Promise<never>((_, reject) =>
 				setTimeout(() => reject(new Error('Request timed out after 30s')), API_TIMEOUT)
 			);
-			console.log('[DEBUG] Calling chatSession.sendMessageStream...');
+			debugLog('[DEBUG] Calling chatSession.sendMessageStream...');
 			const result = await Promise.race([
 				chatSession.sendMessageStream(val),
 				timeout,
 			]);
-			console.log('[DEBUG] Got response stream:', typeof result);
+			debugLog('[DEBUG] Got response stream:', typeof result);
 			let fullText = '';
 
 			for await (const chunk of result.stream) {
 				const chunkText = chunk.text();
-				console.log('[DEBUG] Chunk received:', chunkText?.slice(0, 50) || '(empty)');
+				debugLog('[DEBUG] Chunk received:', chunkText?.slice(0, 50) || '(empty)');
 				fullText += chunkText;
 				setCurrentResponse(fullText);
 			}
-			console.log('[DEBUG] Stream complete. Full text length:', fullText.length);
+			debugLog('[DEBUG] Stream complete. Full text length:', fullText.length);
 
 			const updatedHistory = [
 				...history,
@@ -774,7 +782,7 @@ const App = () => {
 			setDisplayHistory(updatedHistory);
 			setCurrentResponse('');
 		} catch (e: any) {
-			console.error('[ERROR]', e);
+			debugLog('[ERROR]', e);
 			const msg = e?.message || String(e) || 'Unknown error';
 			const isRateLimit = /429|rate.?limit|quota|RESOURCE_EXHAUSTED/i.test(msg);
 			const isTimeout = /timed?\s*out/i.test(msg);
