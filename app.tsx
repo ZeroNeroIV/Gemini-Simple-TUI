@@ -745,20 +745,25 @@ const App = () => {
 		setHistoryIndex(newHistory.filter(h => h.role === 'user').length);
 
 		try {
+			console.log('[DEBUG] Sending message...');
 			const timeout = new Promise<never>((_, reject) =>
 				setTimeout(() => reject(new Error('Request timed out after 30s')), API_TIMEOUT)
 			);
+			console.log('[DEBUG] Calling chatSession.sendMessageStream...');
 			const result = await Promise.race([
 				chatSession.sendMessageStream(val),
 				timeout,
 			]);
+			console.log('[DEBUG] Got response stream:', typeof result);
 			let fullText = '';
 
 			for await (const chunk of result.stream) {
 				const chunkText = chunk.text();
+				console.log('[DEBUG] Chunk received:', chunkText?.slice(0, 50) || '(empty)');
 				fullText += chunkText;
 				setCurrentResponse(fullText);
 			}
+			console.log('[DEBUG] Stream complete. Full text length:', fullText.length);
 
 			const updatedHistory = [
 				...history,
@@ -769,20 +774,27 @@ const App = () => {
 			setDisplayHistory(updatedHistory);
 			setCurrentResponse('');
 		} catch (e: any) {
-			const msg = e.message || '';
+			console.error('[ERROR]', e);
+			const msg = e?.message || String(e) || 'Unknown error';
 			const isRateLimit = /429|rate.?limit|quota|RESOURCE_EXHAUSTED/i.test(msg);
 			const isTimeout = /timed?\s*out/i.test(msg);
 			const isNetwork = /network|ECONNREFUSED|ENOTFOUND|fetch failed/i.test(msg);
+			const isBlocked = /blocked|forbidden|403|401/i.test(msg);
+			const isBadResponse = /bad.?response|invalid.?response|400/i.test(msg);
 
 			let errorText: string;
 			if (isRateLimit) {
-				errorText = 'Rate limited — wait a moment and try again.';
+				errorText = '⚠ Rate limited — wait a moment and try again.';
 			} else if (isTimeout) {
-				errorText = 'Request timed out after 30s. Check your connection.';
+				errorText = '⚠ Request timed out after 30s. Check your connection.';
 			} else if (isNetwork) {
-				errorText = 'Network error — check your internet connection.';
+				errorText = '⚠ Network error — check your internet connection.';
+			} else if (isBlocked) {
+				errorText = `⚠ Access blocked: ${msg}`;
+			} else if (isBadResponse) {
+				errorText = `⚠ Bad response: ${msg}`;
 			} else {
-				errorText = `Error: ${msg || 'Unknown error'}`;
+				errorText = `⚠ Error: ${msg}`;
 			}
 
 			const errorHistory = [
