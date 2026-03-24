@@ -1,6 +1,6 @@
 {
   "name": "jimmy-tui",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "type": "module",
   "description": "Terminal chat interface for Google's Gemini AI with streaming responses and markdown rendering",
   "bin": {
