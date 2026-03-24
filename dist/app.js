@@ -336,6 +336,7 @@ var App = () => {
       }
     }
   });
+  const API_TIMEOUT = 3e4;
   const send = async (val) => {
     if (!val.trim() || isLoading || !chatSession) return;
     if (val.trim() === "/clear" || val.trim() === "/clean" || val.trim() === "/cls") {
@@ -362,7 +363,13 @@ var App = () => {
     setIsLoading(true);
     setHistoryIndex(newHistory.filter((h) => h.role === "user").length);
     try {
-      const result = await chatSession.sendMessageStream(val);
+      const timeout = new Promise(
+        (_, reject) => setTimeout(() => reject(new Error("Request timed out after 30s")), API_TIMEOUT)
+      );
+      const result = await Promise.race([
+        chatSession.sendMessageStream(val),
+        timeout
+      ]);
       let fullText = "";
       for await (const chunk of result.stream) {
         const chunkText = chunk.text();

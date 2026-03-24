@@ -357,6 +357,8 @@ const App = () => {
 		}
 	});
 
+	const API_TIMEOUT = 30_000; // 30 seconds
+
 	const send = async (val: string) => {
 		if (!val.trim() || isLoading || !chatSession) return;
 
@@ -389,7 +391,13 @@ const App = () => {
 		setHistoryIndex(newHistory.filter(h => h.role === 'user').length);
 
 		try {
-			const result = await chatSession.sendMessageStream(val);
+			const timeout = new Promise<never>((_, reject) =>
+				setTimeout(() => reject(new Error('Request timed out after 30s')), API_TIMEOUT)
+			);
+			const result = await Promise.race([
+				chatSession.sendMessageStream(val),
+				timeout,
+			]);
 			let fullText = '';
 
 			for await (const chunk of result.stream) {
