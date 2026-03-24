@@ -40,7 +40,6 @@
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "ink": "^6.6.0",
-    "ink-text-input": "^6.0.0",
     "js-yaml": "^4.1.1",
     "react": "^19.2.3",
     "react-dom": "^19.2.3"

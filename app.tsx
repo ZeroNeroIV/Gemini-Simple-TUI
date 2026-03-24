@@ -1,7 +1,6 @@
 #!/usr/bin/env node
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { render, Box, Text, Static, useInput, useApp } from 'ink';
-import TextInput from 'ink-text-input';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { loadConfig } from './config.js';
 
@@ -302,6 +301,9 @@ function renderMd(source: string, maxWidth?: number): React.ReactNode {
 	return <Box flexDirection="column">{blocks}</Box>;
 }
 
+// ─── Spinner frames ──────────────────────────────────────────────────
+const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
 // ─── Types ───────────────────────────────────────────────────────────
 type Message = {
 	id: string;
@@ -309,6 +311,163 @@ type Message = {
 	text: string;
 	isError?: boolean;
 };
+
+// ─── Custom Input Component ──────────────────────────────────────────
+function ChatInput({
+	value,
+	onChange,
+	onSubmit,
+	isLoading,
+}: {
+	value: string;
+	onChange: (val: string) => void;
+	onSubmit: (val: string) => void;
+	isLoading: boolean;
+}) {
+	const [cursorPos, setCursorPos] = useState(value.length);
+	const [showCursor, setShowCursor] = useState(true);
+	const prevValue = useRef(value);
+
+	// Keep cursor in sync when value changes externally (e.g. arrow key history)
+	if (value !== prevValue.current) {
+		prevValue.current = value;
+		if (cursorPos !== value.length) {
+			setCursorPos(value.length);
+		}
+	}
+
+	// Blinking cursor
+	useEffect(() => {
+		const timer = setInterval(() => setShowCursor(v => !v), 530);
+		return () => clearInterval(timer);
+	}, []);
+
+	// Reset blink on input
+	useEffect(() => {
+		setShowCursor(true);
+	}, [value, cursorPos]);
+
+	useInput((input, key) => {
+		if (isLoading) return;
+
+		// Submit
+		if (key.return) {
+			onSubmit(value);
+			return;
+		}
+
+		// Ctrl+C → quit
+		if (key.ctrl && input === 'c') {
+			process.exit(0);
+		}
+
+		// Ctrl+A → move cursor to start
+		if (key.ctrl && input === 'a') {
+			setCursorPos(0);
+			return;
+		}
+
+		// Ctrl+E → move cursor to end
+		if (key.ctrl && input === 'e') {
+			setCursorPos(value.length);
+			return;
+		}
+
+		// Ctrl+U → clear everything left of cursor
+		if (key.ctrl && input === 'u') {
+			const newValue = value.slice(cursorPos);
+			onChange(newValue);
+			setCursorPos(0);
+			return;
+		}
+
+		// Ctrl+K → clear everything right of cursor
+		if (key.ctrl && input === 'k') {
+			const newValue = value.slice(0, cursorPos);
+			onChange(newValue);
+			return;
+		}
+
+		// Ctrl+W → delete word left
+		if (key.ctrl && input === 'w') {
+			const before = value.slice(0, cursorPos);
+			const trimmed = before.trimEnd();
+			const lastSpace = trimmed.lastIndexOf(' ');
+			const newBefore = lastSpace >= 0 ? before.slice(0, lastSpace + 1) : '';
+			const newValue = newBefore + value.slice(cursorPos);
+			onChange(newValue);
+			setCursorPos(newBefore.length);
+			return;
+		}
+
+		// Arrow keys
+		if (key.leftArrow) {
+			setCursorPos(Math.max(0, cursorPos - 1));
+			return;
+		}
+		if (key.rightArrow) {
+			setCursorPos(Math.min(value.length, cursorPos + 1));
+			return;
+		}
+
+		// Home / End
+		if (key.home) {
+			setCursorPos(0);
+			return;
+		}
+		if (key.end) {
+			setCursorPos(value.length);
+			return;
+		}
+
+		// Backspace → delete left of cursor
+		if (key.backspace) {
+			if (cursorPos > 0) {
+				const newValue = value.slice(0, cursorPos - 1) + value.slice(cursorPos);
+				onChange(newValue);
+				setCursorPos(cursorPos - 1);
+			}
+			return;
+		}
+
+		// Delete → delete right of cursor
+		if (input === '\x1b[3~') {
+			if (cursorPos < value.length) {
+				const newValue = value.slice(0, cursorPos) + value.slice(cursorPos + 1);
+				onChange(newValue);
+			}
+			return;
+		}
+
+		// Regular character input
+		if (input && !key.ctrl && !key.meta && input.length === 1 && input >= ' ') {
+			const newValue = value.slice(0, cursorPos) + input + value.slice(cursorPos);
+			onChange(newValue);
+			setCursorPos(cursorPos + 1);
+		}
+	});
+
+	const before = value.slice(0, cursorPos);
+	const atCursor = value[cursorPos] ?? ' ';
+	const after = value.slice(cursorPos + 1);
+
+	return (
+		<Box flexDirection="column">
+			<Box flexDirection="row">
+				{before.length > 0 && <Text>{before}</Text>}
+				{showCursor ? (
+					<Text inverse>{atCursor}</Text>
+				) : (
+					<Text>{atCursor}</Text>
+				)}
+				{after.length > 0 && <Text>{after}</Text>}
+			</Box>
+			{isLoading && (
+				<Text color="yellow" dimColor>  Processing...</Text>
+			)}
+		</Box>
+	);
+}
 
 // ─── App ─────────────────────────────────────────────────────────────
 const App = () => {
@@ -321,9 +480,19 @@ const App = () => {
 	const [historyIndex, setHistoryIndex] = useState(0);
 	const [displayHistory, setDisplayHistory] = useState<Message[]>([]);
 	const [clearKey, setClearKey] = useState(0);
+	const [spinnerFrame, setSpinnerFrame] = useState(0);
 
 	// Message box is width="75%" with padding={1} on the outer box
 	const msgWidth = Math.floor((process.stdout.columns || 80) * 0.75) - 2;
+
+	// Spinner animation
+	useEffect(() => {
+		if (!isLoading) return;
+		const timer = setInterval(() => {
+			setSpinnerFrame(f => (f + 1) % SPINNER_FRAMES.length);
+		}, 80);
+		return () => clearInterval(timer);
+	}, [isLoading]);
 
 	useEffect(() => {
 		const initChat = model.startChat({
@@ -484,7 +653,13 @@ const App = () => {
 				>
 					<Box flexDirection="column" width="75%">
 						<Text color="green" bold>{config.aiNickname}:</Text>
-						{renderMd(currentResponse, msgWidth)}
+						{currentResponse ? (
+							renderMd(currentResponse, msgWidth)
+						) : (
+							<Text color="yellow">
+								{SPINNER_FRAMES[spinnerFrame]} Thinking...
+							</Text>
+						)}
 					</Box>
 				</Box>
 			)}
@@ -493,10 +668,11 @@ const App = () => {
 				<Box marginRight={1}>
 					<Text color="blue">{'>'}</Text>
 				</Box>
-				<TextInput
+				<ChatInput
 					value={input}
 					onChange={setInput}
 					onSubmit={send}
+					isLoading={isLoading}
 				/>
 			</Box>
 		</Box>

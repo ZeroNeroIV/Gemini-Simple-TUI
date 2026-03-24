@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 
 // app.tsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { render, Box, Text, Static, useInput, useApp } from "ink";
-import TextInput from "ink-text-input";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // config.ts
@@ -296,6 +295,116 @@ function renderMd(source, maxWidth) {
   }
   return /* @__PURE__ */ jsx(Box, { flexDirection: "column", children: blocks });
 }
+var SPINNER_FRAMES = ["\u280B", "\u2819", "\u2839", "\u2838", "\u283C", "\u2834", "\u2826", "\u2827", "\u2807", "\u280F"];
+function ChatInput({
+  value,
+  onChange,
+  onSubmit,
+  isLoading
+}) {
+  const [cursorPos, setCursorPos] = useState(value.length);
+  const [showCursor, setShowCursor] = useState(true);
+  const prevValue = useRef(value);
+  if (value !== prevValue.current) {
+    prevValue.current = value;
+    if (cursorPos !== value.length) {
+      setCursorPos(value.length);
+    }
+  }
+  useEffect(() => {
+    const timer = setInterval(() => setShowCursor((v) => !v), 530);
+    return () => clearInterval(timer);
+  }, []);
+  useEffect(() => {
+    setShowCursor(true);
+  }, [value, cursorPos]);
+  useInput((input, key) => {
+    if (isLoading) return;
+    if (key.return) {
+      onSubmit(value);
+      return;
+    }
+    if (key.ctrl && input === "c") {
+      process.exit(0);
+    }
+    if (key.ctrl && input === "a") {
+      setCursorPos(0);
+      return;
+    }
+    if (key.ctrl && input === "e") {
+      setCursorPos(value.length);
+      return;
+    }
+    if (key.ctrl && input === "u") {
+      const newValue = value.slice(cursorPos);
+      onChange(newValue);
+      setCursorPos(0);
+      return;
+    }
+    if (key.ctrl && input === "k") {
+      const newValue = value.slice(0, cursorPos);
+      onChange(newValue);
+      return;
+    }
+    if (key.ctrl && input === "w") {
+      const before2 = value.slice(0, cursorPos);
+      const trimmed = before2.trimEnd();
+      const lastSpace = trimmed.lastIndexOf(" ");
+      const newBefore = lastSpace >= 0 ? before2.slice(0, lastSpace + 1) : "";
+      const newValue = newBefore + value.slice(cursorPos);
+      onChange(newValue);
+      setCursorPos(newBefore.length);
+      return;
+    }
+    if (key.leftArrow) {
+      setCursorPos(Math.max(0, cursorPos - 1));
+      return;
+    }
+    if (key.rightArrow) {
+      setCursorPos(Math.min(value.length, cursorPos + 1));
+      return;
+    }
+    if (key.home) {
+      setCursorPos(0);
+      return;
+    }
+    if (key.end) {
+      setCursorPos(value.length);
+      return;
+    }
+    if (key.backspace) {
+      if (cursorPos > 0) {
+        const newValue = value.slice(0, cursorPos - 1) + value.slice(cursorPos);
+        onChange(newValue);
+        setCursorPos(cursorPos - 1);
+      }
+      return;
+    }
+    if (input === "\x1B[3~") {
+      if (cursorPos < value.length) {
+        const newValue = value.slice(0, cursorPos) + value.slice(cursorPos + 1);
+        onChange(newValue);
+      }
+      return;
+    }
+    if (input && !key.ctrl && !key.meta && input.length === 1 && input >= " ") {
+      const newValue = value.slice(0, cursorPos) + input + value.slice(cursorPos);
+      onChange(newValue);
+      setCursorPos(cursorPos + 1);
+    }
+  });
+  const before = value.slice(0, cursorPos);
+  const atCursor = value[cursorPos] ?? " ";
+  const after = value.slice(cursorPos + 1);
+  return /* @__PURE__ */ jsxs(Box, { flexDirection: "column", children: [
+    /* @__PURE__ */ jsxs(Box, { flexDirection: "row", children: [
+      before.length > 0 && /* @__PURE__ */ jsx(Text, { children: before }),
+      showCursor ? /* @__PURE__ */ jsx(Text, { inverse: true, children: atCursor }) : /* @__PURE__ */ jsx(Text, { children: atCursor }),
+      after.length > 0 && /* @__PURE__ */ jsx(Text, { children: after })
+    ] }),
+    isLoading && /* @__PURE__ */ jsx(Text, { color: "yellow", dimColor: true, children: "  Processing..." })
+  ] });
+}
 var App = () => {
   const { exit } = useApp();
   const [history, setHistory] = useState([]);
@@ -306,7 +415,15 @@ var App = () => {
   const [historyIndex, setHistoryIndex] = useState(0);
   const [displayHistory, setDisplayHistory] = useState([]);
   const [clearKey, setClearKey] = useState(0);
+  const [spinnerFrame, setSpinnerFrame] = useState(0);
   const msgWidth = Math.floor((process.stdout.columns || 80) * 0.75) - 2;
+  useEffect(() => {
+    if (!isLoading) return;
+    const timer = setInterval(() => {
+      setSpinnerFrame((f) => (f + 1) % SPINNER_FRAMES.length);
+    }, 80);
+    return () => clearInterval(timer);
+  }, [isLoading]);
   useEffect(() => {
     const initChat = model.startChat({
       history: [{
@@ -448,18 +565,22 @@ var App = () => {
             config.aiNickname,
             ":"
           ] }),
-          renderMd(currentResponse, msgWidth)
+          currentResponse ? renderMd(currentResponse, msgWidth) : /* @__PURE__ */ jsxs(Text, { color: "yellow", children: [
+            SPINNER_FRAMES[spinnerFrame],
+            " Thinking..."
+          ] })
         ] })
       }
     ),
     /* @__PURE__ */ jsxs(Box, { borderStyle: "round", borderColor: isLoading ? "yellow" : "gray", children: [
       /* @__PURE__ */ jsx(Box, { marginRight: 1, children: /* @__PURE__ */ jsx(Text, { color: "blue", children: ">" }) }),
       /* @__PURE__ */ jsx(
-        TextInput,
+        ChatInput,
         {
           value: input,
           onChange: setInput,
-          onSubmit: send
+          onSubmit: send,
+          isLoading
         }
       )
     ] })
