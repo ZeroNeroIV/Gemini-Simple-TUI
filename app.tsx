@@ -372,13 +372,22 @@ function ChatInput({
 	const [commandMenuOpen, setCommandMenuOpen] = useState(false);
 	const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
 	const prevValue = useRef(value);
+	const userEdited = useRef(false);
 
-	// Keep cursor in sync when value changes externally (e.g. arrow key history)
+	// Keep cursor in sync when value changes EXTERNALLY (e.g. arrow key history).
+	// Skip sync when the change came from user input (typing, backspace, delete, etc).
 	if (value !== prevValue.current) {
+		const wasUserEdit = userEdited.current;
+		userEdited.current = false;
 		prevValue.current = value;
-		if (cursorPos !== value.length) {
-			setCursorPos(value.length);
+
+		if (!wasUserEdit) {
+			// External change → snap cursor to end
+			if (cursorPos !== value.length) {
+				setCursorPos(value.length);
+			}
 		}
+
 		// Update command menu state based on new value
 		const isCommand = value.startsWith('/');
 		if (isCommand !== commandMenuOpen) {
@@ -422,6 +431,7 @@ function ChatInput({
 			if (key.return) {
 				const cmd = filteredCommands[selectedCommandIndex]?.cmd;
 				if (cmd) {
+					userEdited.current = true;
 					onChange(cmd);
 					setCommandMenuOpen(false);
 					setSelectedCommandIndex(0);
@@ -463,6 +473,7 @@ function ChatInput({
 				try {
 					const text = m.default.readSync();
 					if (text) {
+						userEdited.current = true;
 						const newValue = value.slice(0, cursorPos) + text + value.slice(cursorPos);
 						onChange(newValue);
 						setCursorPos(cursorPos + text.length);
@@ -486,6 +497,7 @@ function ChatInput({
 
 		// ── Ctrl+U → clear everything left of cursor ──
 		if (key.ctrl && input === 'u') {
+			userEdited.current = true;
 			const newValue = value.slice(cursorPos);
 			onChange(newValue);
 			setCursorPos(0);
@@ -494,6 +506,7 @@ function ChatInput({
 
 		// ── Ctrl+K → clear everything right of cursor ──
 		if (key.ctrl && input === 'k') {
+			userEdited.current = true;
 			const newValue = value.slice(0, cursorPos);
 			onChange(newValue);
 			return;
@@ -505,6 +518,7 @@ function ChatInput({
 			const trimmed = before.trimEnd();
 			const lastSpace = trimmed.lastIndexOf(' ');
 			const newBefore = lastSpace >= 0 ? before.slice(0, lastSpace + 1) : '';
+			userEdited.current = true;
 			const newValue = newBefore + value.slice(cursorPos);
 			onChange(newValue);
 			setCursorPos(newBefore.length);
@@ -570,6 +584,7 @@ function ChatInput({
 		// ── Backspace → delete left of cursor ──
 		if (key.backspace) {
 			if (cursorPos > 0) {
+				userEdited.current = true;
 				const newValue = value.slice(0, cursorPos - 1) + value.slice(cursorPos);
 				onChange(newValue);
 				setCursorPos(cursorPos - 1);
@@ -578,8 +593,10 @@ function ChatInput({
 		}
 
 		// ── Delete → delete right of cursor ──
-		if (input === '\x1b[3~') {
+		// Check key.delete (Ink parsed) or raw escape sequence or Ctrl+D
+		if ((key as any).delete || input === '\x1b[3~' || (key.ctrl && input === 'd')) {
 			if (cursorPos < value.length) {
+				userEdited.current = true;
 				const newValue = value.slice(0, cursorPos) + value.slice(cursorPos + 1);
 				onChange(newValue);
 			}
@@ -588,6 +605,7 @@ function ChatInput({
 
 		// ── Regular character input ──
 		if (input && !key.ctrl && !key.meta && input.length === 1 && input >= ' ') {
+			userEdited.current = true;
 			const newValue = value.slice(0, cursorPos) + input + value.slice(cursorPos);
 			onChange(newValue);
 			setCursorPos(cursorPos + 1);

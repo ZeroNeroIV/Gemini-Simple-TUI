@@ -345,10 +345,15 @@ function ChatInput({
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
   const prevValue = useRef(value);
+  const userEdited = useRef(false);
   if (value !== prevValue.current) {
+    const wasUserEdit = userEdited.current;
+    userEdited.current = false;
     prevValue.current = value;
-    if (cursorPos !== value.length) {
-      setCursorPos(value.length);
+    if (!wasUserEdit) {
+      if (cursorPos !== value.length) {
+        setCursorPos(value.length);
+      }
     }
     const isCommand = value.startsWith("/");
     if (isCommand !== commandMenuOpen) {
@@ -383,6 +388,7 @@ function ChatInput({
       if (key.return) {
         const cmd = filteredCommands[selectedCommandIndex]?.cmd;
         if (cmd) {
+          userEdited.current = true;
           onChange(cmd);
           setCommandMenuOpen(false);
           setSelectedCommandIndex(0);
@@ -417,6 +423,7 @@ function ChatInput({
         try {
           const text = m.default.readSync();
           if (text) {
+            userEdited.current = true;
             const newValue = value.slice(0, cursorPos) + text + value.slice(cursorPos);
             onChange(newValue);
             setCursorPos(cursorPos + text.length);
@@ -436,12 +443,14 @@ function ChatInput({
       return;
     }
     if (key.ctrl && input === "u") {
+      userEdited.current = true;
       const newValue = value.slice(cursorPos);
       onChange(newValue);
       setCursorPos(0);
       return;
     }
     if (key.ctrl && input === "k") {
+      userEdited.current = true;
       const newValue = value.slice(0, cursorPos);
       onChange(newValue);
       return;
@@ -451,6 +460,7 @@ function ChatInput({
       const trimmed = before2.trimEnd();
       const lastSpace = trimmed.lastIndexOf(" ");
       const newBefore = lastSpace >= 0 ? before2.slice(0, lastSpace + 1) : "";
+      userEdited.current = true;
       const newValue = newBefore + value.slice(cursorPos);
       onChange(newValue);
       setCursorPos(newBefore.length);
@@ -502,20 +512,23 @@ function ChatInput({
     }
     if (key.backspace) {
       if (cursorPos > 0) {
+        userEdited.current = true;
         const newValue = value.slice(0, cursorPos - 1) + value.slice(cursorPos);
         onChange(newValue);
         setCursorPos(cursorPos - 1);
       }
       return;
     }
-    if (input === "\x1B[3~") {
+    if (key.delete || input === "\x1B[3~" || key.ctrl && input === "d") {
       if (cursorPos < value.length) {
+        userEdited.current = true;
         const newValue = value.slice(0, cursorPos) + value.slice(cursorPos + 1);
         onChange(newValue);
       }
       return;
     }
     if (input && !key.ctrl && !key.meta && input.length === 1 && input >= " ") {
+      userEdited.current = true;
       const newValue = value.slice(0, cursorPos) + input + value.slice(cursorPos);
       onChange(newValue);
       setCursorPos(cursorPos + 1);
