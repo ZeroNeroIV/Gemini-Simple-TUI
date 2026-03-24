@@ -582,7 +582,8 @@ function ChatInput({
 		}
 
 		// ── Backspace → delete left of cursor ──
-		if (key.backspace) {
+		// Handle key.backspace (Ink parsed) and raw escape sequences (\x7f DEL, \x08 BS)
+		if (key.backspace || input === '\x7f' || input === '\x08') {
 			if (cursorPos > 0) {
 				userEdited.current = true;
 				const newValue = value.slice(0, cursorPos - 1) + value.slice(cursorPos);
