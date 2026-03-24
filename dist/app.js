@@ -296,19 +296,65 @@ function renderMd(source, maxWidth) {
   return /* @__PURE__ */ jsx(Box, { flexDirection: "column", children: blocks });
 }
 var SPINNER_FRAMES = ["\u280B", "\u2819", "\u2839", "\u2838", "\u283C", "\u2834", "\u2826", "\u2827", "\u2807", "\u280F"];
+var COMMANDS = [
+  { cmd: "/clear", desc: "Clear chat history" },
+  { cmd: "/clean", desc: "Clear chat history" },
+  { cmd: "/cls", desc: "Clear chat history" },
+  { cmd: "/exit", desc: "Exit Jimmy" },
+  { cmd: "/quit", desc: "Exit Jimmy" }
+];
+function CommandMenu({
+  filter,
+  selectedIndex
+}) {
+  const filtered = COMMANDS.filter((c) => c.cmd.startsWith(filter));
+  if (filtered.length === 0) return null;
+  return /* @__PURE__ */ jsx(Box, { flexDirection: "column", borderStyle: "round", borderColor: "cyan", marginTop: 0, children: filtered.map((item, i) => /* @__PURE__ */ jsxs(Box, { flexDirection: "row", children: [
+    /* @__PURE__ */ jsxs(
+      Text,
+      {
+        color: i === selectedIndex ? "black" : "cyan",
+        backgroundColor: i === selectedIndex ? "cyan" : void 0,
+        bold: i === selectedIndex,
+        children: [
+          " ",
+          item.cmd.padEnd(8),
+          " "
+        ]
+      }
+    ),
+    /* @__PURE__ */ jsx(
+      Text,
+      {
+        color: i === selectedIndex ? "white" : "gray",
+        backgroundColor: i === selectedIndex ? "cyan" : void 0,
+        children: item.desc
+      }
+    )
+  ] }, item.cmd)) });
+}
 function ChatInput({
   value,
   onChange,
   onSubmit,
-  isLoading
+  isLoading,
+  onCommandMenuChange
 }) {
   const [cursorPos, setCursorPos] = useState(value.length);
   const [showCursor, setShowCursor] = useState(true);
+  const [commandMenuOpen, setCommandMenuOpen] = useState(false);
+  const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
   const prevValue = useRef(value);
   if (value !== prevValue.current) {
     prevValue.current = value;
     if (cursorPos !== value.length) {
       setCursorPos(value.length);
+    }
+    const isCommand = value.startsWith("/");
+    if (isCommand !== commandMenuOpen) {
+      setCommandMenuOpen(isCommand);
+      setSelectedCommandIndex(0);
+      onCommandMenuChange(isCommand);
     }
   }
   useEffect(() => {
@@ -318,14 +364,68 @@ function ChatInput({
   useEffect(() => {
     setShowCursor(true);
   }, [value, cursorPos]);
+  const filteredCommands = COMMANDS.filter((c) => c.cmd.startsWith(value));
   useInput((input, key) => {
     if (isLoading) return;
+    if (commandMenuOpen && filteredCommands.length > 0) {
+      if (key.upArrow) {
+        setSelectedCommandIndex(
+          (i) => (i - 1 + filteredCommands.length) % filteredCommands.length
+        );
+        return;
+      }
+      if (key.downArrow) {
+        setSelectedCommandIndex(
+          (i) => (i + 1) % filteredCommands.length
+        );
+        return;
+      }
+      if (key.return) {
+        const cmd = filteredCommands[selectedCommandIndex]?.cmd;
+        if (cmd) {
+          onChange(cmd);
+          setCommandMenuOpen(false);
+          setSelectedCommandIndex(0);
+          onCommandMenuChange(false);
+          onSubmit(cmd);
+        }
+        return;
+      }
+      if (key.escape) {
+        setCommandMenuOpen(false);
+        setSelectedCommandIndex(0);
+        onCommandMenuChange(false);
+        return;
+      }
+    }
     if (key.return) {
       onSubmit(value);
       return;
     }
     if (key.ctrl && input === "c") {
       process.exit(0);
+    }
+    if (key.ctrl && key.shift && input === "C") {
+      if (value) {
+        import("clipboardy").then((m) => m.default.writeSync(value)).catch(() => {
+        });
+      }
+      return;
+    }
+    if (key.ctrl && (key.shift && input === "V" || input === "v" && !key.shift)) {
+      import("clipboardy").then((m) => {
+        try {
+          const text = m.default.readSync();
+          if (text) {
+            const newValue = value.slice(0, cursorPos) + text + value.slice(cursorPos);
+            onChange(newValue);
+            setCursorPos(cursorPos + text.length);
+          }
+        } catch {
+        }
+      }).catch(() => {
+      });
+      return;
     }
     if (key.ctrl && input === "a") {
       setCursorPos(0);
@@ -356,11 +456,39 @@ function ChatInput({
       setCursorPos(newBefore.length);
       return;
     }
-    if (key.leftArrow) {
+    if (key.ctrl && key.leftArrow) {
+      let pos = cursorPos;
+      while (pos > 0 && value[pos - 1] === " ") pos--;
+      while (pos > 0 && value[pos - 1] !== " ") pos--;
+      setCursorPos(pos);
+      return;
+    }
+    if (key.ctrl && key.rightArrow) {
+      let pos = cursorPos;
+      while (pos < value.length && value[pos] !== " ") pos++;
+      while (pos < value.length && value[pos] === " ") pos++;
+      setCursorPos(pos);
+      return;
+    }
+    if (key.meta && input === "h") {
       setCursorPos(Math.max(0, cursorPos - 1));
       return;
     }
-    if (key.rightArrow) {
+    if (key.meta && input === "l") {
+      setCursorPos(Math.min(value.length, cursorPos + 1));
+      return;
+    }
+    if (key.meta && input === "j") {
+      return;
+    }
+    if (key.meta && input === "k") {
+      return;
+    }
+    if (key.leftArrow && !key.ctrl && !key.meta) {
+      setCursorPos(Math.max(0, cursorPos - 1));
+      return;
+    }
+    if (key.rightArrow && !key.ctrl && !key.meta) {
       setCursorPos(Math.min(value.length, cursorPos + 1));
       return;
     }
@@ -391,12 +519,25 @@ function ChatInput({
       const newValue = value.slice(0, cursorPos) + input + value.slice(cursorPos);
       onChange(newValue);
       setCursorPos(cursorPos + 1);
+      const newIsCommand = newValue.startsWith("/");
+      if (newIsCommand !== commandMenuOpen) {
+        setCommandMenuOpen(newIsCommand);
+        setSelectedCommandIndex(0);
+        onCommandMenuChange(newIsCommand);
+      }
     }
   });
   const before = value.slice(0, cursorPos);
   const atCursor = value[cursorPos] ?? " ";
   const after = value.slice(cursorPos + 1);
   return /* @__PURE__ */ jsxs(Box, { flexDirection: "column", children: [
+    commandMenuOpen && filteredCommands.length > 0 && /* @__PURE__ */ jsx(
+      CommandMenu,
+      {
+        filter: value,
+        selectedIndex: selectedCommandIndex
+      }
+    ),
     /* @__PURE__ */ jsxs(Box, { flexDirection: "row", children: [
       before.length > 0 && /* @__PURE__ */ jsx(Text, { children: before }),
       showCursor ? /* @__PURE__ */ jsx(Text, { inverse: true, children: atCursor }) : /* @__PURE__ */ jsx(Text, { children: atCursor }),
@@ -416,6 +557,7 @@ var App = () => {
   const [displayHistory, setDisplayHistory] = useState([]);
   const [clearKey, setClearKey] = useState(0);
   const [spinnerFrame, setSpinnerFrame] = useState(0);
+  const [commandMenuOpen, setCommandMenuOpen] = useState(false);
   const msgWidth = Math.floor((process.stdout.columns || 80) * 0.75) - 2;
   useEffect(() => {
     if (!isLoading) return;
@@ -438,6 +580,7 @@ var App = () => {
   }, []);
   const userHistory = displayHistory.filter((h) => h.role === "user").map((h) => h.text);
   useInput((input2, key) => {
+    if (commandMenuOpen) return;
     if (key.upArrow) {
       const newIndex = Math.max(0, historyIndex - 1);
       setHistoryIndex(newIndex);
@@ -572,7 +715,7 @@ var App = () => {
         ] })
       }
     ),
-    /* @__PURE__ */ jsxs(Box, { borderStyle: "round", borderColor: isLoading ? "yellow" : "gray", children: [
+    /* @__PURE__ */ jsxs(Box, { borderStyle: "round", borderColor: isLoading ? "yellow" : commandMenuOpen ? "cyan" : "gray", children: [
       /* @__PURE__ */ jsx(Box, { marginRight: 1, children: /* @__PURE__ */ jsx(Text, { color: "blue", children: ">" }) }),
       /* @__PURE__ */ jsx(
         ChatInput,
@@ -580,7 +723,8 @@ var App = () => {
           value: input,
           onChange: setInput,
           onSubmit: send,
-          isLoading
+          isLoading,
+          onCommandMenuChange: setCommandMenuOpen
         }
       )
     ] })

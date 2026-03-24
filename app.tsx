@@ -304,6 +304,15 @@ function renderMd(source: string, maxWidth?: number): React.ReactNode {
 // ─── Spinner frames ──────────────────────────────────────────────────
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
+// ─── Available commands ──────────────────────────────────────────────
+const COMMANDS = [
+	{ cmd: '/clear', desc: 'Clear chat history' },
+	{ cmd: '/clean', desc: 'Clear chat history' },
+	{ cmd: '/cls', desc: 'Clear chat history' },
+	{ cmd: '/exit', desc: 'Exit Jimmy' },
+	{ cmd: '/quit', desc: 'Exit Jimmy' },
+];
+
 // ─── Types ───────────────────────────────────────────────────────────
 type Message = {
 	id: string;
@@ -312,20 +321,56 @@ type Message = {
 	isError?: boolean;
 };
 
+// ─── Command Menu Component ──────────────────────────────────────────
+function CommandMenu({
+	filter,
+	selectedIndex,
+}: {
+	filter: string;
+	selectedIndex: number;
+}) {
+	const filtered = COMMANDS.filter(c => c.cmd.startsWith(filter));
+	if (filtered.length === 0) return null;
+
+	return (
+		<Box flexDirection="column" borderStyle="round" borderColor="cyan" marginTop={0}>
+			{filtered.map((item, i) => (
+				<Box key={item.cmd} flexDirection="row">
+					<Text color={i === selectedIndex ? 'black' : 'cyan'}
+						backgroundColor={i === selectedIndex ? 'cyan' : undefined}
+						bold={i === selectedIndex}
+					>
+						{' '}{item.cmd.padEnd(8)}{' '}
+					</Text>
+					<Text color={i === selectedIndex ? 'white' : 'gray'}
+						backgroundColor={i === selectedIndex ? 'cyan' : undefined}
+					>
+						{item.desc}
+					</Text>
+				</Box>
+			))}
+		</Box>
+	);
+}
+
 // ─── Custom Input Component ──────────────────────────────────────────
 function ChatInput({
 	value,
 	onChange,
 	onSubmit,
 	isLoading,
+	onCommandMenuChange,
 }: {
 	value: string;
 	onChange: (val: string) => void;
 	onSubmit: (val: string) => void;
 	isLoading: boolean;
+	onCommandMenuChange: (open: boolean) => void;
 }) {
 	const [cursorPos, setCursorPos] = useState(value.length);
 	const [showCursor, setShowCursor] = useState(true);
+	const [commandMenuOpen, setCommandMenuOpen] = useState(false);
+	const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
 	const prevValue = useRef(value);
 
 	// Keep cursor in sync when value changes externally (e.g. arrow key history)
@@ -333,6 +378,13 @@ function ChatInput({
 		prevValue.current = value;
 		if (cursorPos !== value.length) {
 			setCursorPos(value.length);
+		}
+		// Update command menu state based on new value
+		const isCommand = value.startsWith('/');
+		if (isCommand !== commandMenuOpen) {
+			setCommandMenuOpen(isCommand);
+			setSelectedCommandIndex(0);
+			onCommandMenuChange(isCommand);
 		}
 	}
 
@@ -347,33 +399,92 @@ function ChatInput({
 		setShowCursor(true);
 	}, [value, cursorPos]);
 
+	// Filtered commands for current input
+	const filteredCommands = COMMANDS.filter(c => c.cmd.startsWith(value));
+
 	useInput((input, key) => {
 		if (isLoading) return;
 
-		// Submit
+		// ── Command menu navigation ──
+		if (commandMenuOpen && filteredCommands.length > 0) {
+			if (key.upArrow) {
+				setSelectedCommandIndex(i =>
+					(i - 1 + filteredCommands.length) % filteredCommands.length
+				);
+				return;
+			}
+			if (key.downArrow) {
+				setSelectedCommandIndex(i =>
+					(i + 1) % filteredCommands.length
+				);
+				return;
+			}
+			if (key.return) {
+				const cmd = filteredCommands[selectedCommandIndex]?.cmd;
+				if (cmd) {
+					onChange(cmd);
+					setCommandMenuOpen(false);
+					setSelectedCommandIndex(0);
+					onCommandMenuChange(false);
+					onSubmit(cmd);
+				}
+				return;
+			}
+			if (key.escape) {
+				setCommandMenuOpen(false);
+				setSelectedCommandIndex(0);
+				onCommandMenuChange(false);
+				return;
+			}
+		}
+
+		// ── Submit ──
 		if (key.return) {
 			onSubmit(value);
 			return;
 		}
 
-		// Ctrl+C → quit
+		// ── Ctrl+C → quit ──
 		if (key.ctrl && input === 'c') {
 			process.exit(0);
 		}
 
-		// Ctrl+A → move cursor to start
+		// ── Ctrl+Shift+C → copy ──
+		if (key.ctrl && key.shift && input === 'C') {
+			if (value) {
+				import('clipboardy').then(m => m.default.writeSync(value)).catch(() => {});
+			}
+			return;
+		}
+
+		// ── Ctrl+Shift+V / Ctrl+V → paste ──
+		if (key.ctrl && (key.shift && input === 'V' || input === 'v' && !key.shift)) {
+			import('clipboardy').then(m => {
+				try {
+					const text = m.default.readSync();
+					if (text) {
+						const newValue = value.slice(0, cursorPos) + text + value.slice(cursorPos);
+						onChange(newValue);
+						setCursorPos(cursorPos + text.length);
+					}
+				} catch {}
+			}).catch(() => {});
+			return;
+		}
+
+		// ── Ctrl+A → move cursor to start ──
 		if (key.ctrl && input === 'a') {
 			setCursorPos(0);
 			return;
 		}
 
-		// Ctrl+E → move cursor to end
+		// ── Ctrl+E → move cursor to end ──
 		if (key.ctrl && input === 'e') {
 			setCursorPos(value.length);
 			return;
 		}
 
-		// Ctrl+U → clear everything left of cursor
+		// ── Ctrl+U → clear everything left of cursor ──
 		if (key.ctrl && input === 'u') {
 			const newValue = value.slice(cursorPos);
 			onChange(newValue);
@@ -381,14 +492,14 @@ function ChatInput({
 			return;
 		}
 
-		// Ctrl+K → clear everything right of cursor
+		// ── Ctrl+K → clear everything right of cursor ──
 		if (key.ctrl && input === 'k') {
 			const newValue = value.slice(0, cursorPos);
 			onChange(newValue);
 			return;
 		}
 
-		// Ctrl+W → delete word left
+		// ── Ctrl+W → delete word left ──
 		if (key.ctrl && input === 'w') {
 			const before = value.slice(0, cursorPos);
 			const trimmed = before.trimEnd();
@@ -400,17 +511,53 @@ function ChatInput({
 			return;
 		}
 
-		// Arrow keys
-		if (key.leftArrow) {
+		// ── Ctrl+Left → jump word left ──
+		if (key.ctrl && key.leftArrow) {
+			let pos = cursorPos;
+			while (pos > 0 && value[pos - 1] === ' ') pos--;
+			while (pos > 0 && value[pos - 1] !== ' ') pos--;
+			setCursorPos(pos);
+			return;
+		}
+
+		// ── Ctrl+Right → jump word right ──
+		if (key.ctrl && key.rightArrow) {
+			let pos = cursorPos;
+			while (pos < value.length && value[pos] !== ' ') pos++;
+			while (pos < value.length && value[pos] === ' ') pos++;
+			setCursorPos(pos);
+			return;
+		}
+
+		// ── Alt+h / Alt+j / Alt+k / Alt+l (vim-style movement) ──
+		if (key.meta && input === 'h') {
 			setCursorPos(Math.max(0, cursorPos - 1));
 			return;
 		}
-		if (key.rightArrow) {
+		if (key.meta && input === 'l') {
+			setCursorPos(Math.min(value.length, cursorPos + 1));
+			return;
+		}
+		if (key.meta && input === 'j') {
+			// Alt+j → history down (same as Down arrow)
+			return; // let parent handle
+		}
+		if (key.meta && input === 'k') {
+			// Alt+k → history up (same as Up arrow)
+			return; // let parent handle
+		}
+
+		// ── Arrow keys (plain, no modifier) ──
+		if (key.leftArrow && !key.ctrl && !key.meta) {
+			setCursorPos(Math.max(0, cursorPos - 1));
+			return;
+		}
+		if (key.rightArrow && !key.ctrl && !key.meta) {
 			setCursorPos(Math.min(value.length, cursorPos + 1));
 			return;
 		}
 
-		// Home / End
+		// ── Home / End ──
 		if (key.home) {
 			setCursorPos(0);
 			return;
@@ -420,7 +567,7 @@ function ChatInput({
 			return;
 		}
 
-		// Backspace → delete left of cursor
+		// ── Backspace → delete left of cursor ──
 		if (key.backspace) {
 			if (cursorPos > 0) {
 				const newValue = value.slice(0, cursorPos - 1) + value.slice(cursorPos);
@@ -430,7 +577,7 @@ function ChatInput({
 			return;
 		}
 
-		// Delete → delete right of cursor
+		// ── Delete → delete right of cursor ──
 		if (input === '\x1b[3~') {
 			if (cursorPos < value.length) {
 				const newValue = value.slice(0, cursorPos) + value.slice(cursorPos + 1);
@@ -439,11 +586,19 @@ function ChatInput({
 			return;
 		}
 
-		// Regular character input
+		// ── Regular character input ──
 		if (input && !key.ctrl && !key.meta && input.length === 1 && input >= ' ') {
 			const newValue = value.slice(0, cursorPos) + input + value.slice(cursorPos);
 			onChange(newValue);
 			setCursorPos(cursorPos + 1);
+
+			// Update command menu
+			const newIsCommand = newValue.startsWith('/');
+			if (newIsCommand !== commandMenuOpen) {
+				setCommandMenuOpen(newIsCommand);
+				setSelectedCommandIndex(0);
+				onCommandMenuChange(newIsCommand);
+			}
 		}
 	});
 
@@ -453,6 +608,12 @@ function ChatInput({
 
 	return (
 		<Box flexDirection="column">
+			{commandMenuOpen && filteredCommands.length > 0 && (
+				<CommandMenu
+					filter={value}
+					selectedIndex={selectedCommandIndex}
+				/>
+			)}
 			<Box flexDirection="row">
 				{before.length > 0 && <Text>{before}</Text>}
 				{showCursor ? (
@@ -481,6 +642,7 @@ const App = () => {
 	const [displayHistory, setDisplayHistory] = useState<Message[]>([]);
 	const [clearKey, setClearKey] = useState(0);
 	const [spinnerFrame, setSpinnerFrame] = useState(0);
+	const [commandMenuOpen, setCommandMenuOpen] = useState(false);
 
 	// Message box is width="75%" with padding={1} on the outer box
 	const msgWidth = Math.floor((process.stdout.columns || 80) * 0.75) - 2;
@@ -510,6 +672,9 @@ const App = () => {
 	const userHistory = displayHistory.filter(h => h.role === 'user').map(h => h.text);
 
 	useInput((input, key) => {
+		// Don't handle arrows if command menu is open (ChatInput handles them)
+		if (commandMenuOpen) return;
+
 		if (key.upArrow) {
 			const newIndex = Math.max(0, historyIndex - 1);
 			setHistoryIndex(newIndex);
@@ -664,7 +829,7 @@ const App = () => {
 				</Box>
 			)}
 
-			<Box borderStyle="round" borderColor={isLoading ? 'yellow' : 'gray'}>
+			<Box borderStyle="round" borderColor={isLoading ? 'yellow' : commandMenuOpen ? 'cyan' : 'gray'}>
 				<Box marginRight={1}>
 					<Text color="blue">{'>'}</Text>
 				</Box>
@@ -673,6 +838,7 @@ const App = () => {
 					onChange={setInput}
 					onSubmit={send}
 					isLoading={isLoading}
+					onCommandMenuChange={setCommandMenuOpen}
 				/>
 			</Box>
 		</Box>

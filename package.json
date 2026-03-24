@@ -39,6 +39,7 @@
   "homepage": "https://github.com/ZeroNeroIV/Gemini-Simple-TUI#readme",
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
+    "clipboardy": "^5.3.1",
     "ink": "^6.6.0",
     "js-yaml": "^4.1.1",
     "react": "^19.2.3",
