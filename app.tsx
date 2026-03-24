@@ -307,6 +307,7 @@ type Message = {
 	id: string;
 	role: 'user' | 'model';
 	text: string;
+	isError?: boolean;
 };
 
 // ─── App ─────────────────────────────────────────────────────────────
@@ -415,12 +416,29 @@ const App = () => {
 			setDisplayHistory(updatedHistory);
 			setCurrentResponse('');
 		} catch (e: any) {
+			const msg = e.message || '';
+			const isRateLimit = /429|rate.?limit|quota|RESOURCE_EXHAUSTED/i.test(msg);
+			const isTimeout = /timed?\s*out/i.test(msg);
+			const isNetwork = /network|ECONNREFUSED|ENOTFOUND|fetch failed/i.test(msg);
+
+			let errorText: string;
+			if (isRateLimit) {
+				errorText = 'Rate limited — wait a moment and try again.';
+			} else if (isTimeout) {
+				errorText = 'Request timed out after 30s. Check your connection.';
+			} else if (isNetwork) {
+				errorText = 'Network error — check your internet connection.';
+			} else {
+				errorText = `Error: ${msg || 'Unknown error'}`;
+			}
+
 			const errorHistory = [
 				...history,
 				{
 					id: Date.now().toString(),
 					role: 'model' as const,
-					text: `Error: ${e.message || 'Unknown error'}`
+					text: errorText,
+					isError: true,
 				}
 			];
 			setHistory(errorHistory);
@@ -441,12 +459,14 @@ const App = () => {
 					>
 						<Box flexDirection="column" width="75%">
 							<Text
-								color={msg.role === 'user' ? 'magenta' : 'green'}
+								color={msg.isError ? 'red' : msg.role === 'user' ? 'magenta' : 'green'}
 								bold
 							>
-								{msg.role === 'user' ? config.username : config.aiNickname}:
+								{msg.isError ? '⚠ Error' : msg.role === 'user' ? config.username : config.aiNickname}:
 							</Text>
-							{msg.role === 'model' ? (
+							{msg.isError ? (
+								<Text color="red">{msg.text}</Text>
+							) : msg.role === 'model' ? (
 								renderMd(msg.text, msgWidth)
 							) : (
 								<Text>{msg.text}</Text>

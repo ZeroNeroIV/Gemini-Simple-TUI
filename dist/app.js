@@ -385,12 +385,27 @@ var App = () => {
       setDisplayHistory(updatedHistory);
       setCurrentResponse("");
     } catch (e) {
+      const msg = e.message || "";
+      const isRateLimit = /429|rate.?limit|quota|RESOURCE_EXHAUSTED/i.test(msg);
+      const isTimeout = /timed?\s*out/i.test(msg);
+      const isNetwork = /network|ECONNREFUSED|ENOTFOUND|fetch failed/i.test(msg);
+      let errorText;
+      if (isRateLimit) {
+        errorText = "Rate limited \u2014 wait a moment and try again.";
+      } else if (isTimeout) {
+        errorText = "Request timed out after 30s. Check your connection.";
+      } else if (isNetwork) {
+        errorText = "Network error \u2014 check your internet connection.";
+      } else {
+        errorText = `Error: ${msg || "Unknown error"}`;
+      }
       const errorHistory = [
         ...history,
         {
           id: Date.now().toString(),
           role: "model",
-          text: `Error: ${e.message || "Unknown error"}`
+          text: errorText,
+          isError: true
         }
       ];
       setHistory(errorHistory);
@@ -409,15 +424,15 @@ var App = () => {
           /* @__PURE__ */ jsxs(
             Text,
             {
-              color: msg.role === "user" ? "magenta" : "green",
+              color: msg.isError ? "red" : msg.role === "user" ? "magenta" : "green",
               bold: true,
               children: [
-                msg.role === "user" ? config.username : config.aiNickname,
+                msg.isError ? "\u26A0 Error" : msg.role === "user" ? config.username : config.aiNickname,
                 ":"
               ]
             }
           ),
-          msg.role === "model" ? renderMd(msg.text, msgWidth) : /* @__PURE__ */ jsx(Text, { children: msg.text })
+          msg.isError ? /* @__PURE__ */ jsx(Text, { color: "red", children: msg.text }) : msg.role === "model" ? renderMd(msg.text, msgWidth) : /* @__PURE__ */ jsx(Text, { children: msg.text })
         ] })
       },
       msg.id
