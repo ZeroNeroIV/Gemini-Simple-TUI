@@ -520,8 +520,8 @@ function ChatInput({
       setCursorPos(value.length);
       return;
     }
-    const pressedBackspace = key.backspace || input === "\x7F" || input === "\b";
-    const pressedDelete = input === "\x1B[3~" || key.delete || key.ctrl && input === "d";
+    const pressedBackspace = key.backspace || input === "\b" || input === "\b";
+    const pressedDelete = key.delete || input === "\x7F" || input === "\x1B[3~" || key.ctrl && input === "d";
     if (pressedBackspace && !pressedDelete) {
       if (cursorPos > 0) {
         userEdited.current = true;

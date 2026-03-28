@@ -13,6 +13,7 @@
   ],
   "scripts": {
     "build": "rm -rf dist && tsup --onSuccess \"chmod +x dist/app.js\"",
+    "build:bun": "bun build --compile app.tsx --outfile dist/jimmy",
     "dev": "tsup --watch --onSuccess \"node dist/app.js\""
   },
   "repository": {

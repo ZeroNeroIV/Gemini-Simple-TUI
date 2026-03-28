@@ -591,8 +591,8 @@ function ChatInput({
 		}
 
 		// ── Backspace / Delete ──
-		const pressedBackspace = key.backspace || input === '\x7f' || input === '\x08';
-		const pressedDelete = input === '\x1b[3~' || (key as any).delete || (key.ctrl && input === 'd');
+		const pressedBackspace = key.backspace || input === '\b' || input === '\x08';
+		const pressedDelete = (key as any).delete || input === '\x7f' || input === '\x1b[3~' || (key.ctrl && input === 'd');
 
 		if (pressedBackspace && !pressedDelete) {
 			if (cursorPos > 0) {
