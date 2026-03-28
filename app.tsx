@@ -24,7 +24,7 @@ const genAI = new GoogleGenerativeAI(config.apiKey);
 const model = genAI.getGenerativeModel({ model: config.model });
 
 // ─── Inline markdown parser ──────────────────────────────────────────
-// Handles: **bold**, *italic*, `code`
+// Handles: [text](url), **bold**, *italic*, `code`
 // Returns an array of React <Text> elements (no bare strings).
 function renderInline(text: string): React.ReactNode[] {
 	const parts: React.ReactNode[] = [];
@@ -32,6 +32,8 @@ function renderInline(text: string): React.ReactNode[] {
 	let key = 0;
 
 	while (remaining.length > 0) {
+		// Link: [text](url) - must be checked first
+		const linkMatch = remaining.match(/\[([^\]]+)\]\(([^)]+)\)/);
 		// Bold: **text**
 		const boldMatch = remaining.match(/\*\*(.+?)\*\*/);
 		// Italic: *text*
@@ -41,6 +43,7 @@ function renderInline(text: string): React.ReactNode[] {
 
 		// Find the earliest match
 		const matches = [
+			linkMatch && { type: 'link' as const, match: linkMatch, index: linkMatch.index! },
 			boldMatch && { type: 'bold' as const, match: boldMatch, index: boldMatch.index! },
 			italicMatch && { type: 'italic' as const, match: italicMatch, index: italicMatch.index! },
 			codeMatch && { type: 'code' as const, match: codeMatch, index: codeMatch.index! },
@@ -60,13 +63,19 @@ function renderInline(text: string): React.ReactNode[] {
 		}
 
 		// The matched inline element
-		const inner = first.match[1];
-		if (first.type === 'bold') {
-			parts.push(<Text key={key++} bold>{inner}</Text>);
-		} else if (first.type === 'italic') {
-			parts.push(<Text key={key++} italic>{inner}</Text>);
+		if (first.type === 'link') {
+			const linkText = first.match[1];
+			const linkUrl = first.match[2];
+			parts.push(<Text key={key++} color="cyan" underline>{linkText}</Text>);
 		} else {
-			parts.push(<Text key={key++} color="cyan">{inner}</Text>);
+			const inner = first.match[1];
+			if (first.type === 'bold') {
+				parts.push(<Text key={key++} bold>{inner}</Text>);
+			} else if (first.type === 'italic') {
+				parts.push(<Text key={key++} italic>{inner}</Text>);
+			} else {
+				parts.push(<Text key={key++} color="cyan">{inner}</Text>);
+			}
 		}
 
 		remaining = remaining.slice(first.index + first.match[0].length);
@@ -99,8 +108,15 @@ function renderMd(source: string, maxWidth?: number): React.ReactNode {
 				codeLines.push(lines[i]);
 				i++;
 			}
-			if (i < lines.length) i++; // skip closing ```
-			const maxCodeLen = Math.max(lang.length, ...codeLines.map(l => l.length));
+			// Handle unclosed code block (EOF before closing ```)
+			if (i >= lines.length) {
+				// Don't skip anything - we're at EOF
+			} else {
+				i++; // skip closing ```
+			}
+			// Handle empty code blocks
+			const displayLines = codeLines.length > 0 ? codeLines : ['(empty)'];
+			const maxCodeLen = Math.max(lang.length, ...displayLines.map(l => l.length));
 			const codeWidth = Math.min(maxCodeLen + 2, COLS);
 			const border = '─'.repeat(codeWidth);
 			blocks.push(
@@ -113,10 +129,12 @@ function renderMd(source: string, maxWidth?: number): React.ReactNode {
 							<Text color="gray">│</Text>
 						</Box>
 					)}
-					{codeLines.map((cl, ci) => (
+					{displayLines.map((cl, ci) => (
 						<Box key={ci} flexDirection="row">
 							<Text color="gray">│</Text>
-							<Text color="cyan"> {cl}{' '.repeat(Math.max(0, codeWidth - cl.length - 1))}</Text>
+							<Text color={codeLines.length === 0 ? "gray" : "cyan"} dimColor={codeLines.length === 0}>
+								{cl}{' '.repeat(Math.max(0, codeWidth - cl.length - 1))}
+							</Text>
 							<Text color="gray">│</Text>
 						</Box>
 					))}
@@ -219,12 +237,16 @@ function renderMd(source: string, maxWidth?: number): React.ReactNode {
 				row.replace(/[|\-:\s]/g, '') === '';
 
 			const headerRow = parseRow(tableLines[0]);
+			const numCols = headerRow.length;
 			const dataRows = tableLines
 				.slice(1)
 				.filter(r => !isSep(r))
-				.map(parseRow);
-
-			const numCols = headerRow.length;
+				.map(row => {
+					const parsed = parseRow(row);
+					// Pad row to match header column count
+					while (parsed.length < numCols) parsed.push('');
+					return parsed;
+				});
 
 			// Calculate ideal column widths from content
 			const idealWidths = headerRow.map(h => h.length);
@@ -382,6 +404,13 @@ function ChatInput({
 	const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
 	const prevValue = useRef(value);
 	const userEdited = useRef(false);
+	// Refs to avoid stale closures in useInput callback
+	const cursorPosRef = useRef(cursorPos);
+	const valueRef = useRef(value);
+
+	// Keep refs in sync with state
+	cursorPosRef.current = cursorPos;
+	valueRef.current = value;
 
 	// Keep cursor in sync when value changes EXTERNALLY (e.g. arrow key history).
 	// Skip sync when the change came from user input (typing, backspace, delete, etc).
@@ -421,6 +450,15 @@ function ChatInput({
 	const filteredCommands = COMMANDS.filter(c => c.cmd.startsWith(value));
 
 	useInput((input, key) => {
+		// Use refs to get current values and avoid stale closures
+		const currentValue = valueRef.current;
+		const currentPos = cursorPosRef.current;
+
+		// Allow Ctrl+C even when loading
+		if (key.ctrl && input === 'c') {
+			process.exit(0);
+		}
+
 		if (isLoading) return;
 
 		// ── Command menu navigation ──
@@ -459,19 +497,14 @@ function ChatInput({
 
 		// ── Submit ──
 		if (key.return) {
-			onSubmit(value);
+			onSubmit(currentValue);
 			return;
-		}
-
-		// ── Ctrl+C → quit ──
-		if (key.ctrl && input === 'c') {
-			process.exit(0);
 		}
 
 		// ── Ctrl+Shift+C → copy ──
 		if (key.ctrl && key.shift && input === 'C') {
-			if (value) {
-				import('clipboardy').then(m => m.default.writeSync(value)).catch(() => {});
+			if (currentValue) {
+				import('clipboardy').then(m => m.default.writeSync(currentValue)).catch(() => {});
 			}
 			return;
 		}
@@ -483,9 +516,11 @@ function ChatInput({
 					const text = m.default.readSync();
 					if (text) {
 						userEdited.current = true;
-						const newValue = value.slice(0, cursorPos) + text + value.slice(cursorPos);
+						const curPos = cursorPosRef.current;
+						const curVal = valueRef.current;
+						const newValue = curVal.slice(0, curPos) + text + curVal.slice(curPos);
 						onChange(newValue);
-						setCursorPos(cursorPos + text.length);
+						setCursorPos(curPos + text.length);
 					}
 				} catch {}
 			}).catch(() => {});
@@ -500,14 +535,14 @@ function ChatInput({
 
 		// ── Ctrl+E → move cursor to end ──
 		if (key.ctrl && input === 'e') {
-			setCursorPos(value.length);
+			setCursorPos(currentValue.length);
 			return;
 		}
 
 		// ── Ctrl+U → clear everything left of cursor ──
 		if (key.ctrl && input === 'u') {
 			userEdited.current = true;
-			const newValue = value.slice(cursorPos);
+			const newValue = currentValue.slice(currentPos);
 			onChange(newValue);
 			setCursorPos(0);
 			return;
@@ -516,19 +551,19 @@ function ChatInput({
 		// ── Ctrl+K → clear everything right of cursor ──
 		if (key.ctrl && input === 'k') {
 			userEdited.current = true;
-			const newValue = value.slice(0, cursorPos);
+			const newValue = currentValue.slice(0, currentPos);
 			onChange(newValue);
 			return;
 		}
 
 		// ── Ctrl+W → delete word left ──
 		if (key.ctrl && input === 'w') {
-			const before = value.slice(0, cursorPos);
+			const before = currentValue.slice(0, currentPos);
 			const trimmed = before.trimEnd();
 			const lastSpace = trimmed.lastIndexOf(' ');
 			const newBefore = lastSpace >= 0 ? before.slice(0, lastSpace + 1) : '';
 			userEdited.current = true;
-			const newValue = newBefore + value.slice(cursorPos);
+			const newValue = newBefore + currentValue.slice(currentPos);
 			onChange(newValue);
 			setCursorPos(newBefore.length);
 			return;
@@ -536,29 +571,29 @@ function ChatInput({
 
 		// ── Ctrl+Left → jump word left ──
 		if (key.ctrl && key.leftArrow) {
-			let pos = cursorPos;
-			while (pos > 0 && value[pos - 1] === ' ') pos--;
-			while (pos > 0 && value[pos - 1] !== ' ') pos--;
+			let pos = currentPos;
+			while (pos > 0 && currentValue[pos - 1] === ' ') pos--;
+			while (pos > 0 && currentValue[pos - 1] !== ' ') pos--;
 			setCursorPos(pos);
 			return;
 		}
 
 		// ── Ctrl+Right → jump word right ──
 		if (key.ctrl && key.rightArrow) {
-			let pos = cursorPos;
-			while (pos < value.length && value[pos] !== ' ') pos++;
-			while (pos < value.length && value[pos] === ' ') pos++;
+			let pos = currentPos;
+			while (pos < currentValue.length && currentValue[pos] !== ' ') pos++;
+			while (pos < currentValue.length && currentValue[pos] === ' ') pos++;
 			setCursorPos(pos);
 			return;
 		}
 
 		// ── Alt+h / Alt+j / Alt+k / Alt+l (vim-style movement) ──
 		if (key.meta && input === 'h') {
-			setCursorPos(Math.max(0, cursorPos - 1));
+			setCursorPos(Math.max(0, currentPos - 1));
 			return;
 		}
 		if (key.meta && input === 'l') {
-			setCursorPos(Math.min(value.length, cursorPos + 1));
+			setCursorPos(Math.min(currentValue.length, currentPos + 1));
 			return;
 		}
 		if (key.meta && input === 'j') {
@@ -572,11 +607,11 @@ function ChatInput({
 
 		// ── Arrow keys (plain, no modifier) ──
 		if (key.leftArrow && !key.ctrl && !key.meta) {
-			setCursorPos(Math.max(0, cursorPos - 1));
+			setCursorPos(Math.max(0, currentPos - 1));
 			return;
 		}
 		if (key.rightArrow && !key.ctrl && !key.meta) {
-			setCursorPos(Math.min(value.length, cursorPos + 1));
+			setCursorPos(Math.min(currentValue.length, currentPos + 1));
 			return;
 		}
 
@@ -586,7 +621,7 @@ function ChatInput({
 			return;
 		}
 		if (key.end) {
-			setCursorPos(value.length);
+			setCursorPos(currentValue.length);
 			return;
 		}
 
@@ -595,19 +630,19 @@ function ChatInput({
 		const pressedDelete = (key as any).delete || input === '\x7f' || input === '\x1b[3~' || (key.ctrl && input === 'd');
 
 		if (pressedBackspace && !pressedDelete) {
-			if (cursorPos > 0) {
+			if (currentPos > 0) {
 				userEdited.current = true;
-				const newValue = value.slice(0, cursorPos - 1) + value.slice(cursorPos);
+				const newValue = currentValue.slice(0, currentPos - 1) + currentValue.slice(currentPos);
 				onChange(newValue);
-				setCursorPos(cursorPos - 1);
+				setCursorPos(currentPos - 1);
 			}
 			return;
 		}
 
 		if (pressedDelete && !pressedBackspace) {
-			if (cursorPos < value.length) {
+			if (currentPos < currentValue.length) {
 				userEdited.current = true;
-				const newValue = value.slice(0, cursorPos) + value.slice(cursorPos + 1);
+				const newValue = currentValue.slice(0, currentPos) + currentValue.slice(currentPos + 1);
 				onChange(newValue);
 			}
 			return;
@@ -616,9 +651,9 @@ function ChatInput({
 		// ── Regular character input ──
 		if (input && !key.ctrl && !key.meta && input.length === 1 && input >= ' ') {
 			userEdited.current = true;
-			const newValue = value.slice(0, cursorPos) + input + value.slice(cursorPos);
+			const newValue = currentValue.slice(0, currentPos) + input + currentValue.slice(currentPos);
 			onChange(newValue);
-			setCursorPos(cursorPos + 1);
+			setCursorPos(currentPos + 1);
 
 			// Update command menu
 			const newIsCommand = newValue.startsWith('/');
@@ -671,9 +706,21 @@ const App = () => {
 	const [clearKey, setClearKey] = useState(0);
 	const [spinnerFrame, setSpinnerFrame] = useState(0);
 	const [commandMenuOpen, setCommandMenuOpen] = useState(false);
+	const [terminalCols, setTerminalCols] = useState(process.stdout.columns || 80);
+
+	// Track terminal resize for responsive width
+	useEffect(() => {
+		const handleResize = () => {
+			setTerminalCols(process.stdout.columns || 80);
+		};
+		process.stdout.on('resize', handleResize);
+		return () => {
+			process.stdout.off('resize', handleResize);
+		};
+	}, []);
 
 	// Message box is width="75%" with padding={1} on the outer box
-	const msgWidth = Math.floor((process.stdout.columns || 80) * 0.75) - 2;
+	const msgWidth = Math.floor(terminalCols * 0.75) - 2;
 
 	// Spinner animation
 	useEffect(() => {
@@ -774,13 +821,10 @@ const App = () => {
 			}
 			debugLog('[DEBUG] Stream complete. Full text length:', fullText.length);
 
-			const updatedHistory = [
-				...history,
-				userMsg,
-				{ id: (Date.now() + 1).toString(), role: 'model' as const, text: fullText }
-			];
-			setHistory(updatedHistory);
-			setDisplayHistory(updatedHistory);
+			const modelMsg = { id: (Date.now() + 1).toString(), role: 'model' as const, text: fullText };
+			// Use functional state updates to avoid stale closure
+			setHistory(prev => [...prev, userMsg, modelMsg]);
+			setDisplayHistory(prev => [...prev, userMsg, modelMsg]);
 			setCurrentResponse('');
 		} catch (e: any) {
 			debugLog('[ERROR]', e);
@@ -806,17 +850,15 @@ const App = () => {
 				errorText = `⚠ Error: ${msg}`;
 			}
 
-			const errorHistory = [
-				...history,
-				{
-					id: Date.now().toString(),
-					role: 'model' as const,
-					text: errorText,
-					isError: true,
-				}
-			];
-			setHistory(errorHistory);
-			setDisplayHistory(errorHistory);
+			const errorMsg = {
+				id: Date.now().toString(),
+				role: 'model' as const,
+				text: errorText,
+				isError: true,
+			};
+			// Use functional state updates to avoid stale closure
+			setHistory(prev => [...prev, userMsg, errorMsg]);
+			setDisplayHistory(prev => [...prev, userMsg, errorMsg]);
 		}
 		setIsLoading(false);
 	};
