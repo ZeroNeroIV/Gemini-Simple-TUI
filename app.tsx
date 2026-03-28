@@ -89,16 +89,17 @@ function renderMd(source: string, maxWidth?: number): React.ReactNode {
 		const line = lines[i];
 
 		// Code block: ``` or ```lang
-		const codeStart = line.match(/^```\s*(.*)?$/);
+		const codeStart = line.match(/^```/);
 		if (codeStart) {
-			const lang = codeStart[1]?.trim() || '';
+			const langMatch = line.match(/^```\s*(\w+)/);
+			const lang = langMatch?.[1]?.trim() || '';
 			const codeLines: string[] = [];
 			i++;
-			while (i < lines.length && !lines[i].match(/^```\s*$/)) {
+			while (i < lines.length && !lines[i].match(/^```/)) {
 				codeLines.push(lines[i]);
 				i++;
 			}
-			i++; // skip closing ```
+			if (i < lines.length) i++; // skip closing ```
 			const maxCodeLen = Math.max(lang.length, ...codeLines.map(l => l.length));
 			const codeWidth = Math.min(maxCodeLen + 2, COLS);
 			const border = '─'.repeat(codeWidth);
@@ -589,9 +590,11 @@ function ChatInput({
 			return;
 		}
 
-		// ── Backspace → delete left of cursor ──
-		// Handle key.backspace (Ink parsed) and raw escape sequences (\x7f DEL, \x08 BS)
-		if (key.backspace || input === '\x7f' || input === '\x08') {
+		// ── Backspace / Delete ──
+		const pressedBackspace = key.backspace || input === '\x7f' || input === '\x08';
+		const pressedDelete = input === '\x1b[3~' || (key as any).delete || (key.ctrl && input === 'd');
+
+		if (pressedBackspace && !pressedDelete) {
 			if (cursorPos > 0) {
 				userEdited.current = true;
 				const newValue = value.slice(0, cursorPos - 1) + value.slice(cursorPos);
@@ -601,9 +604,7 @@ function ChatInput({
 			return;
 		}
 
-		// ── Delete → delete right of cursor ──
-		// Check key.delete (Ink parsed) or raw escape sequence or Ctrl+D
-		if ((key as any).delete || input === '\x1b[3~' || (key.ctrl && input === 'd')) {
+		if (pressedDelete && !pressedBackspace) {
 			if (cursorPos < value.length) {
 				userEdited.current = true;
 				const newValue = value.slice(0, cursorPos) + value.slice(cursorPos + 1);

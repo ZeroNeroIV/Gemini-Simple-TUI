@@ -15,7 +15,8 @@ var DEFAULT_CONFIG = {
   username: "You",
   aiNickname: "Jimmy",
   model: "gemini-2.5-flash",
-  systemPrompt: 'You are a direct, no-nonsense assistant. Answer immediately \u2014 no preamble, no filler, no "Sure! Let me help with that." Just give the answer. Be concise. Use code blocks when relevant. Skip the pleasantries.'
+  systemPrompt: 'You are a direct, no-nonsense assistant. Answer immediately \u2014 no preamble, no filler, no "Sure! Let me help with that." Just give the answer. Be concise. Use code blocks when relevant. Skip the pleasantries.',
+  debugLogs: false
 };
 var CONFIG_DIR = resolve(homedir(), ".config");
 var CONFIG_PATH = resolve(CONFIG_DIR, "jimmy.config.yml");
@@ -49,7 +50,8 @@ function loadConfig() {
       username: parsed.username ?? DEFAULT_CONFIG.username,
       aiNickname: parsed.aiNickname ?? DEFAULT_CONFIG.aiNickname,
       model: parsed.model ?? DEFAULT_CONFIG.model,
-      systemPrompt: parsed.systemPrompt ?? DEFAULT_CONFIG.systemPrompt
+      systemPrompt: parsed.systemPrompt ?? DEFAULT_CONFIG.systemPrompt,
+      debugLogs: parsed.debugLogs ?? DEFAULT_CONFIG.debugLogs
     };
   } catch (err) {
     console.warn(`Warning: failed to parse config file: ${err.message}. Using defaults.`);
@@ -60,11 +62,18 @@ function loadConfig() {
 // app.tsx
 import { jsx, jsxs } from "react/jsx-runtime";
 var config = loadConfig();
+var debugLog = (...args) => {
+  if (config.debugLogs) {
+    console.log(...args);
+  }
+};
 if (config.apiKey === "YOUR_GEMINI_API_KEY_HERE") {
   console.error("Error: No API key set. Edit ~/.config/jimmy.config.yml and add your Gemini API key.");
   process.exit(1);
 }
-console.log(`Jimmy | model=${config.model} user=${config.username} ai=${config.aiNickname}`);
+if (config.debugLogs) {
+  console.log(`Jimmy | model=${config.model} user=${config.username} ai=${config.aiNickname}`);
+}
 var genAI = new GoogleGenerativeAI(config.apiKey);
 var model = genAI.getGenerativeModel({ model: config.model });
 function renderInline(text) {
@@ -109,16 +118,17 @@ function renderMd(source, maxWidth) {
   const COLS = maxWidth ?? Math.min((process.stdout.columns || 80) - 4, 60);
   while (i < lines.length) {
     const line = lines[i];
-    const codeStart = line.match(/^```\s*(.*)?$/);
+    const codeStart = line.match(/^```/);
     if (codeStart) {
-      const lang = codeStart[1]?.trim() || "";
+      const langMatch = line.match(/^```\s*(\w+)/);
+      const lang = langMatch?.[1]?.trim() || "";
       const codeLines = [];
       i++;
-      while (i < lines.length && !lines[i].match(/^```\s*$/)) {
+      while (i < lines.length && !lines[i].match(/^```/)) {
         codeLines.push(lines[i]);
         i++;
       }
-      i++;
+      if (i < lines.length) i++;
       const maxCodeLen = Math.max(lang.length, ...codeLines.map((l) => l.length));
       const codeWidth = Math.min(maxCodeLen + 2, COLS);
       const border = "\u2500".repeat(codeWidth);
@@ -510,7 +520,9 @@ function ChatInput({
       setCursorPos(value.length);
       return;
     }
-    if (key.backspace) {
+    const pressedBackspace = key.backspace || input === "\x7F" || input === "\b";
+    const pressedDelete = input === "\x1B[3~" || key.delete || key.ctrl && input === "d";
+    if (pressedBackspace && !pressedDelete) {
       if (cursorPos > 0) {
         userEdited.current = true;
         const newValue = value.slice(0, cursorPos - 1) + value.slice(cursorPos);
@@ -519,7 +531,7 @@ function ChatInput({
       }
       return;
     }
-    if (key.delete || input === "\x1B[3~" || key.ctrl && input === "d") {
+    if (pressedDelete && !pressedBackspace) {
       if (cursorPos < value.length) {
         userEdited.current = true;
         const newValue = value.slice(0, cursorPos) + value.slice(cursorPos + 1);
@@ -636,19 +648,24 @@ var App = () => {
     setIsLoading(true);
     setHistoryIndex(newHistory.filter((h) => h.role === "user").length);
     try {
+      debugLog("[DEBUG] Sending message...");
       const timeout = new Promise(
         (_, reject) => setTimeout(() => reject(new Error("Request timed out after 30s")), API_TIMEOUT)
       );
+      debugLog("[DEBUG] Calling chatSession.sendMessageStream...");
       const result = await Promise.race([
         chatSession.sendMessageStream(val),
         timeout
       ]);
+      debugLog("[DEBUG] Got response stream:", typeof result);
       let fullText = "";
       for await (const chunk of result.stream) {
         const chunkText = chunk.text();
+        debugLog("[DEBUG] Chunk received:", chunkText?.slice(0, 50) || "(empty)");
         fullText += chunkText;
         setCurrentResponse(fullText);
       }
+      debugLog("[DEBUG] Stream complete. Full text length:", fullText.length);
       const updatedHistory = [
         ...history,
         userMsg,
@@ -658,19 +675,26 @@ var App = () => {
       setDisplayHistory(updatedHistory);
       setCurrentResponse("");
     } catch (e) {
-      const msg = e.message || "";
+      debugLog("[ERROR]", e);
+      const msg = e?.message || String(e) || "Unknown error";
       const isRateLimit = /429|rate.?limit|quota|RESOURCE_EXHAUSTED/i.test(msg);
       const isTimeout = /timed?\s*out/i.test(msg);
       const isNetwork = /network|ECONNREFUSED|ENOTFOUND|fetch failed/i.test(msg);
+      const isBlocked = /blocked|forbidden|403|401/i.test(msg);
+      const isBadResponse = /bad.?response|invalid.?response|400/i.test(msg);
       let errorText;
       if (isRateLimit) {
-        errorText = "Rate limited \u2014 wait a moment and try again.";
+        errorText = "\u26A0 Rate limited \u2014 wait a moment and try again.";
       } else if (isTimeout) {
-        errorText = "Request timed out after 30s. Check your connection.";
+        errorText = "\u26A0 Request timed out after 30s. Check your connection.";
       } else if (isNetwork) {
-        errorText = "Network error \u2014 check your internet connection.";
+        errorText = "\u26A0 Network error \u2014 check your internet connection.";
+      } else if (isBlocked) {
+        errorText = `\u26A0 Access blocked: ${msg}`;
+      } else if (isBadResponse) {
+        errorText = `\u26A0 Bad response: ${msg}`;
       } else {
-        errorText = `Error: ${msg || "Unknown error"}`;
+        errorText = `\u26A0 Error: ${msg}`;
       }
       const errorHistory = [
         ...history,
