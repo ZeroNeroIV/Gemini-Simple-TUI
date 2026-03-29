@@ -81,10 +81,12 @@ function renderInline(text) {
   let remaining = text;
   let key = 0;
   while (remaining.length > 0) {
+    const linkMatch = remaining.match(/\[([^\]]+)\]\(([^)]+)\)/);
     const boldMatch = remaining.match(/\*\*(.+?)\*\*/);
     const italicMatch = remaining.match(/(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)/);
     const codeMatch = remaining.match(/`([^`]+)`/);
     const matches = [
+      linkMatch && { type: "link", match: linkMatch, index: linkMatch.index },
       boldMatch && { type: "bold", match: boldMatch, index: boldMatch.index },
       italicMatch && { type: "italic", match: italicMatch, index: italicMatch.index },
       codeMatch && { type: "code", match: codeMatch, index: codeMatch.index }
@@ -98,13 +100,19 @@ function renderInline(text) {
     if (first.index > 0) {
       parts.push(/* @__PURE__ */ jsx(Text, { children: remaining.slice(0, first.index) }, key++));
     }
-    const inner = first.match[1];
-    if (first.type === "bold") {
-      parts.push(/* @__PURE__ */ jsx(Text, { bold: true, children: inner }, key++));
-    } else if (first.type === "italic") {
-      parts.push(/* @__PURE__ */ jsx(Text, { italic: true, children: inner }, key++));
+    if (first.type === "link") {
+      const linkText = first.match[1];
+      const linkUrl = first.match[2];
+      parts.push(/* @__PURE__ */ jsx(Text, { color: "cyan", underline: true, children: linkText }, key++));
     } else {
-      parts.push(/* @__PURE__ */ jsx(Text, { color: "cyan", children: inner }, key++));
+      const inner = first.match[1];
+      if (first.type === "bold") {
+        parts.push(/* @__PURE__ */ jsx(Text, { bold: true, children: inner }, key++));
+      } else if (first.type === "italic") {
+        parts.push(/* @__PURE__ */ jsx(Text, { italic: true, children: inner }, key++));
+      } else {
+        parts.push(/* @__PURE__ */ jsx(Text, { color: "cyan", children: inner }, key++));
+      }
     }
     remaining = remaining.slice(first.index + first.match[0].length);
   }
@@ -128,8 +136,12 @@ function renderMd(source, maxWidth) {
         codeLines.push(lines[i]);
         i++;
       }
-      if (i < lines.length) i++;
-      const maxCodeLen = Math.max(lang.length, ...codeLines.map((l) => l.length));
+      if (i >= lines.length) {
+      } else {
+        i++;
+      }
+      const displayLines = codeLines.length > 0 ? codeLines : ["(empty)"];
+      const maxCodeLen = Math.max(lang.length, ...displayLines.map((l) => l.length));
       const codeWidth = Math.min(maxCodeLen + 2, COLS);
       const border = "\u2500".repeat(codeWidth);
       blocks.push(
@@ -148,10 +160,9 @@ function renderMd(source, maxWidth) {
             ] }),
             /* @__PURE__ */ jsx(Text, { color: "gray", children: "\u2502" })
           ] }),
-          codeLines.map((cl, ci) => /* @__PURE__ */ jsxs(Box, { flexDirection: "row", children: [
+          displayLines.map((cl, ci) => /* @__PURE__ */ jsxs(Box, { flexDirection: "row", children: [
             /* @__PURE__ */ jsx(Text, { color: "gray", children: "\u2502" }),
-            /* @__PURE__ */ jsxs(Text, { color: "cyan", children: [
-              " ",
+            /* @__PURE__ */ jsxs(Text, { color: codeLines.length === 0 ? "gray" : "cyan", dimColor: codeLines.length === 0, children: [
               cl,
               " ".repeat(Math.max(0, codeWidth - cl.length - 1))
             ] }),
@@ -236,8 +247,12 @@ function renderMd(source, maxWidth) {
       const parseRow = (row) => row.split("|").slice(1, -1).map((cell) => cell.trim());
       const isSep = (row) => row.replace(/[|\-:\s]/g, "") === "";
       const headerRow = parseRow(tableLines[0]);
-      const dataRows = tableLines.slice(1).filter((r) => !isSep(r)).map(parseRow);
       const numCols = headerRow.length;
+      const dataRows = tableLines.slice(1).filter((r) => !isSep(r)).map((row) => {
+        const parsed = parseRow(row);
+        while (parsed.length < numCols) parsed.push("");
+        return parsed;
+      });
       const idealWidths = headerRow.map((h) => h.length);
       for (const row of dataRows) {
         for (let c = 0; c < numCols; c++) {
@@ -356,6 +371,10 @@ function ChatInput({
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
   const prevValue = useRef(value);
   const userEdited = useRef(false);
+  const cursorPosRef = useRef(cursorPos);
+  const valueRef = useRef(value);
+  cursorPosRef.current = cursorPos;
+  valueRef.current = value;
   if (value !== prevValue.current) {
     const wasUserEdit = userEdited.current;
     userEdited.current = false;
@@ -381,6 +400,11 @@ function ChatInput({
   }, [value, cursorPos]);
   const filteredCommands = COMMANDS.filter((c) => c.cmd.startsWith(value));
   useInput((input, key) => {
+    const currentValue = valueRef.current;
+    const currentPos = cursorPosRef.current;
+    if (key.ctrl && input === "c") {
+      process.exit(0);
+    }
     if (isLoading) return;
     if (commandMenuOpen && filteredCommands.length > 0) {
       if (key.upArrow) {
@@ -415,15 +439,12 @@ function ChatInput({
       }
     }
     if (key.return) {
-      onSubmit(value);
+      onSubmit(currentValue);
       return;
     }
-    if (key.ctrl && input === "c") {
-      process.exit(0);
-    }
     if (key.ctrl && key.shift && input === "C") {
-      if (value) {
-        import("clipboardy").then((m) => m.default.writeSync(value)).catch(() => {
+      if (currentValue) {
+        import("clipboardy").then((m) => m.default.writeSync(currentValue)).catch(() => {
         });
       }
       return;
@@ -434,9 +455,11 @@ function ChatInput({
           const text = m.default.readSync();
           if (text) {
             userEdited.current = true;
-            const newValue = value.slice(0, cursorPos) + text + value.slice(cursorPos);
+            const curPos = cursorPosRef.current;
+            const curVal = valueRef.current;
+            const newValue = curVal.slice(0, curPos) + text + curVal.slice(curPos);
             onChange(newValue);
-            setCursorPos(cursorPos + text.length);
+            setCursorPos(curPos + text.length);
           }
         } catch {
         }
@@ -449,53 +472,53 @@ function ChatInput({
       return;
     }
     if (key.ctrl && input === "e") {
-      setCursorPos(value.length);
+      setCursorPos(currentValue.length);
       return;
     }
     if (key.ctrl && input === "u") {
       userEdited.current = true;
-      const newValue = value.slice(cursorPos);
+      const newValue = currentValue.slice(currentPos);
       onChange(newValue);
       setCursorPos(0);
       return;
     }
     if (key.ctrl && input === "k") {
       userEdited.current = true;
-      const newValue = value.slice(0, cursorPos);
+      const newValue = currentValue.slice(0, currentPos);
       onChange(newValue);
       return;
     }
     if (key.ctrl && input === "w") {
-      const before2 = value.slice(0, cursorPos);
+      const before2 = currentValue.slice(0, currentPos);
       const trimmed = before2.trimEnd();
       const lastSpace = trimmed.lastIndexOf(" ");
       const newBefore = lastSpace >= 0 ? before2.slice(0, lastSpace + 1) : "";
       userEdited.current = true;
-      const newValue = newBefore + value.slice(cursorPos);
+      const newValue = newBefore + currentValue.slice(currentPos);
       onChange(newValue);
       setCursorPos(newBefore.length);
       return;
     }
     if (key.ctrl && key.leftArrow) {
-      let pos = cursorPos;
-      while (pos > 0 && value[pos - 1] === " ") pos--;
-      while (pos > 0 && value[pos - 1] !== " ") pos--;
+      let pos = currentPos;
+      while (pos > 0 && currentValue[pos - 1] === " ") pos--;
+      while (pos > 0 && currentValue[pos - 1] !== " ") pos--;
       setCursorPos(pos);
       return;
     }
     if (key.ctrl && key.rightArrow) {
-      let pos = cursorPos;
-      while (pos < value.length && value[pos] !== " ") pos++;
-      while (pos < value.length && value[pos] === " ") pos++;
+      let pos = currentPos;
+      while (pos < currentValue.length && currentValue[pos] !== " ") pos++;
+      while (pos < currentValue.length && currentValue[pos] === " ") pos++;
       setCursorPos(pos);
       return;
     }
     if (key.meta && input === "h") {
-      setCursorPos(Math.max(0, cursorPos - 1));
+      setCursorPos(Math.max(0, currentPos - 1));
       return;
     }
     if (key.meta && input === "l") {
-      setCursorPos(Math.min(value.length, cursorPos + 1));
+      setCursorPos(Math.min(currentValue.length, currentPos + 1));
       return;
     }
     if (key.meta && input === "j") {
@@ -505,11 +528,11 @@ function ChatInput({
       return;
     }
     if (key.leftArrow && !key.ctrl && !key.meta) {
-      setCursorPos(Math.max(0, cursorPos - 1));
+      setCursorPos(Math.max(0, currentPos - 1));
       return;
     }
     if (key.rightArrow && !key.ctrl && !key.meta) {
-      setCursorPos(Math.min(value.length, cursorPos + 1));
+      setCursorPos(Math.min(currentValue.length, currentPos + 1));
       return;
     }
     if (key.home) {
@@ -517,33 +540,43 @@ function ChatInput({
       return;
     }
     if (key.end) {
-      setCursorPos(value.length);
+      setCursorPos(currentValue.length);
       return;
     }
-    const pressedBackspace = key.backspace || input === "\b" || input === "\b";
-    const pressedDelete = key.delete || input === "\x7F" || input === "\x1B[3~" || key.ctrl && input === "d";
-    if (pressedBackspace && !pressedDelete) {
-      if (cursorPos > 0) {
+    if (key.backspace || input === "\x7F" || input === "\b") {
+      if (currentPos > 0) {
         userEdited.current = true;
-        const newValue = value.slice(0, cursorPos - 1) + value.slice(cursorPos);
+        const newValue = currentValue.slice(0, currentPos - 1) + currentValue.slice(currentPos);
         onChange(newValue);
-        setCursorPos(cursorPos - 1);
+        setCursorPos(currentPos - 1);
+        const newIsCommand = newValue.startsWith("/");
+        if (newIsCommand !== commandMenuOpen) {
+          setCommandMenuOpen(newIsCommand);
+          setSelectedCommandIndex(0);
+          onCommandMenuChange(newIsCommand);
+        }
       }
       return;
     }
-    if (pressedDelete && !pressedBackspace) {
-      if (cursorPos < value.length) {
+    if (key.delete) {
+      if (currentPos < currentValue.length) {
         userEdited.current = true;
-        const newValue = value.slice(0, cursorPos) + value.slice(cursorPos + 1);
+        const newValue = currentValue.slice(0, currentPos) + currentValue.slice(currentPos + 1);
         onChange(newValue);
+        const newIsCommand = newValue.startsWith("/");
+        if (newIsCommand !== commandMenuOpen) {
+          setCommandMenuOpen(newIsCommand);
+          setSelectedCommandIndex(0);
+          onCommandMenuChange(newIsCommand);
+        }
       }
       return;
     }
     if (input && !key.ctrl && !key.meta && input.length === 1 && input >= " ") {
       userEdited.current = true;
-      const newValue = value.slice(0, cursorPos) + input + value.slice(cursorPos);
+      const newValue = currentValue.slice(0, currentPos) + input + currentValue.slice(currentPos);
       onChange(newValue);
-      setCursorPos(cursorPos + 1);
+      setCursorPos(currentPos + 1);
       const newIsCommand = newValue.startsWith("/");
       if (newIsCommand !== commandMenuOpen) {
         setCommandMenuOpen(newIsCommand);
@@ -583,7 +616,17 @@ var App = () => {
   const [clearKey, setClearKey] = useState(0);
   const [spinnerFrame, setSpinnerFrame] = useState(0);
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
-  const msgWidth = Math.floor((process.stdout.columns || 80) * 0.75) - 2;
+  const [terminalCols, setTerminalCols] = useState(process.stdout.columns || 80);
+  useEffect(() => {
+    const handleResize = () => {
+      setTerminalCols(process.stdout.columns || 80);
+    };
+    process.stdout.on("resize", handleResize);
+    return () => {
+      process.stdout.off("resize", handleResize);
+    };
+  }, []);
+  const msgWidth = Math.floor(terminalCols * 0.75) - 2;
   useEffect(() => {
     if (!isLoading) return;
     const timer = setInterval(() => {
@@ -666,13 +709,9 @@ var App = () => {
         setCurrentResponse(fullText);
       }
       debugLog("[DEBUG] Stream complete. Full text length:", fullText.length);
-      const updatedHistory = [
-        ...history,
-        userMsg,
-        { id: (Date.now() + 1).toString(), role: "model", text: fullText }
-      ];
-      setHistory(updatedHistory);
-      setDisplayHistory(updatedHistory);
+      const modelMsg = { id: (Date.now() + 1).toString(), role: "model", text: fullText };
+      setHistory((prev) => [...prev, userMsg, modelMsg]);
+      setDisplayHistory((prev) => [...prev, userMsg, modelMsg]);
       setCurrentResponse("");
     } catch (e) {
       debugLog("[ERROR]", e);
@@ -696,17 +735,14 @@ var App = () => {
       } else {
         errorText = `\u26A0 Error: ${msg}`;
       }
-      const errorHistory = [
-        ...history,
-        {
-          id: Date.now().toString(),
-          role: "model",
-          text: errorText,
-          isError: true
-        }
-      ];
-      setHistory(errorHistory);
-      setDisplayHistory(errorHistory);
+      const errorMsg = {
+        id: Date.now().toString(),
+        role: "model",
+        text: errorText,
+        isError: true
+      };
+      setHistory((prev) => [...prev, userMsg, errorMsg]);
+      setDisplayHistory((prev) => [...prev, userMsg, errorMsg]);
     }
     setIsLoading(false);
   };

@@ -625,26 +625,49 @@ function ChatInput({
 			return;
 		}
 
-		// ── Backspace / Delete ──
-		// Most terminals send \x7f for backspace, \x1b[3~ for delete
-		const pressedBackspace = key.backspace || input === '\b' || input === '\x08' || input === '\x7f';
-		const pressedDelete = (key as any).delete || input === '\x1b[3~' || (key.ctrl && input === 'd');
-
-		if (pressedBackspace && !pressedDelete) {
-			if (currentPos > 0) {
-				userEdited.current = true;
-				const newValue = currentValue.slice(0, currentPos - 1) + currentValue.slice(currentPos);
-				onChange(newValue);
-				setCursorPos(currentPos - 1);
-			}
-			return;
-		}
-
-		if (pressedDelete && !pressedBackspace) {
+		// ── Backspace (delete character at cursor) ──
+		if (key.backspace || input === '\x7f' || input === '\x08') {
 			if (currentPos < currentValue.length) {
 				userEdited.current = true;
 				const newValue = currentValue.slice(0, currentPos) + currentValue.slice(currentPos + 1);
 				onChange(newValue);
+
+				const newIsCommand = newValue.startsWith('/');
+				if (newIsCommand !== commandMenuOpen) {
+					setCommandMenuOpen(newIsCommand);
+					setSelectedCommandIndex(0);
+					onCommandMenuChange(newIsCommand);
+				}
+			} else if (currentPos > 0) {
+				userEdited.current = true;
+				const newValue = currentValue.slice(0, currentPos - 1);
+				onChange(newValue);
+				setCursorPos(currentPos - 1);
+
+				const newIsCommand = newValue.startsWith('/');
+				if (newIsCommand !== commandMenuOpen) {
+					setCommandMenuOpen(newIsCommand);
+					setSelectedCommandIndex(0);
+					onCommandMenuChange(newIsCommand);
+				}
+			}
+			return;
+		}
+
+		// ── Delete (delete at cursor) ──
+		if (key.delete) {
+			if (currentPos < currentValue.length) {
+				userEdited.current = true;
+				const newValue = currentValue.slice(0, currentPos) + currentValue.slice(currentPos + 1);
+				onChange(newValue);
+
+				// Update command menu
+				const newIsCommand = newValue.startsWith('/');
+				if (newIsCommand !== commandMenuOpen) {
+					setCommandMenuOpen(newIsCommand);
+					setSelectedCommandIndex(0);
+					onCommandMenuChange(newIsCommand);
+				}
 			}
 			return;
 		}
